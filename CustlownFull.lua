@@ -1,2111 +1,781 @@
-if debugX then
-    warn('Initialising Custlown')
-end
-
-local function getService(name)
-    local service = game:GetService(name)
-    return if cloneref then cloneref(service) else service
-end
-
-local UserInputService = getService("UserInputService")
-local TweenService = getService("TweenService")
-local Players = getService("Players")
-local CoreGui = getService("CoreGui")
-
-getgenv().DISABLE_RAYFIELD_REQUESTS = true
-
-local function loadWithTimeout(url, timeout)
-    assert(type(url) == "string", "Expected string, got " .. type(url))
-    timeout = timeout or 5
-    local requestCompleted = false
-    local success, result = false, nil
-
-    local requestThread = task.spawn(function()
-        local fetchSuccess, fetchResult = pcall(game.HttpGet, game, url)
-        if not fetchSuccess or #fetchResult == 0 then
-            if #fetchResult == 0 then
-                fetchResult = "Empty response"
-            end
-            success, result = false, fetchResult
-            requestCompleted = true
-            return
-        end
-        local content = fetchResult
-        local execSuccess, execResult = pcall(function()
-            return loadstring(content)()
-        end)
-        success, result = execSuccess, execResult
-        requestCompleted = true
-    end)
-
-    local timeoutThread = task.delay(timeout, function()
-        if not requestCompleted then
-            warn("Request for " .. url .. " timed out")
-            task.cancel(requestThread)
-            result = "Request timed out"
-            requestCompleted = true
-        end
-    end)
-
-    while not requestCompleted do task.wait() end
-    if coroutine.status(timeoutThread) ~= "dead" then task.cancel(timeoutThread) end
-    if not success then warn("Failed to process " .. tostring(url)) end
-    return if success then result else nil
-end
-
-local _getgenv = rawget(_G, "getgenv")
-local requestsDisabled = false
-local customAssetId = nil
-local secureMode = false
-if _getgenv then
-    local ok, result = pcall(function() return _getgenv().DISABLE_RAYFIELD_REQUESTS end)
-    if ok and result then requestsDisabled = true end
-    local ok2, result2 = pcall(function() return _getgenv().CUSTLOWN_ASSET_ID end)
-    if ok2 and type(result2) == "number" then customAssetId = result2 end
-end
-
-local secureWarnings = {}
-local customAssets = {}
-
-local function secureNotify(wType, title, content)
-    if secureWarnings[wType] then return end
-    secureWarnings[wType] = true
-    task.spawn(function()
-        while not Custlown or not Custlown.Notify do task.wait(0.5) end
-        Custlown:Notify({Title = title, Content = content, Duration = 8})
-    end)
-end
-
-local InterfaceBuild = 'UU2NX'
-local Release = "Build 1.746"
-local CustlownFolder = "Custlown"
-local ConfigurationFolder = CustlownFolder.."/Configurations"
-local ConfigurationExtension = ".cfld"
-local settingsTable = {
-    General = { custlownOpen = {Type = 'bind', Value = 'K', Name = 'Custlown Keybind'} },
-    System = { usageAnalytics = {Type = 'toggle', Value = false, Name = 'Anonymised Analytics'} }
-}
-
-local overriddenSettings = {}
-local function overrideSetting(category, name, value)
-    overriddenSettings[category .. "." .. name] = value
-end
-
-local function getSetting(category, name)
-    if overriddenSettings[category .. "." .. name] ~= nil then
-        return overriddenSettings[category .. "." .. name]
-    elseif settingsTable[category][name] ~= nil then
-        return settingsTable[category][name].Value
-    end
-end
-
-if requestsDisabled then overrideSetting("System", "usageAnalytics", false) end
-
-local HttpService = getService('HttpService')
-local RunService = getService('RunService')
-local useStudio = RunService:IsStudio() or false
-
-local settingsCreated = false
-local settingsInitialized = false
-local requestFunc = (syn and syn.request) or (fluxus and fluxus.request) or (http and http.request) or http_request or request
-
-local function callSafely(func, ...)
-    if func then
-        local success, result = pcall(func, ...)
-        if not success then warn("Custlown | Function failed: ", result) end
-        return result
-    end
-end
-
-local function ensureFolder(folderPath)
-    if isfolder and not callSafely(isfolder, folderPath) then
-        callSafely(makefolder, folderPath)
-    end
-end
-
-local function loadSettings()
-    local file = nil
-    pcall(function()
-        if callSafely(isfolder, CustlownFolder) then
-            if callSafely(isfile, CustlownFolder..'/settings'..ConfigurationExtension) then
-                file = callSafely(readfile, CustlownFolder..'/settings'..ConfigurationExtension)
-            end
-        end
-        if file then
-            local success, decoded = pcall(function() return HttpService:JSONDecode(file) end)
-            file = success and decoded or {}
-        else
-            file = {}
-        end
-        if not settingsCreated then return end
-        if next(file) ~= nil then
-            for categoryName, settingCategory in pairs(settingsTable) do
-                if file[categoryName] then
-                    for settingName, setting in pairs(settingCategory) do
-                        if file[categoryName][settingName] then
-                            setting.Value = file[categoryName][settingName].Value
-                            if setting.Element then setting.Element:Set(getSetting(categoryName, settingName)) end
-                        end
-                    end
-                end
-            end
-        end
-        settingsInitialized = true
-    end)
-end
-
-loadSettings()
-
-local CustlownLibrary = {
+local Custlown = {
+    Version = "1.0",
     Flags = {},
-    Theme = {
-        Default = {
-            TextColor = Color3.fromRGB(240, 240, 240), Background = Color3.fromRGB(25, 25, 25),
-            Topbar = Color3.fromRGB(34, 34, 34), Shadow = Color3.fromRGB(20, 20, 20),
-            NotificationBackground = Color3.fromRGB(20, 20, 20), NotificationActionsBackground = Color3.fromRGB(230, 230, 230),
-            TabBackground = Color3.fromRGB(80, 80, 80), TabStroke = Color3.fromRGB(85, 85, 85),
-            TabBackgroundSelected = Color3.fromRGB(210, 210, 210), TabTextColor = Color3.fromRGB(240, 240, 240),
-            SelectedTabTextColor = Color3.fromRGB(50, 50, 50), ElementBackground = Color3.fromRGB(35, 35, 35),
-            ElementBackgroundHover = Color3.fromRGB(40, 40, 40), SecondaryElementBackground = Color3.fromRGB(25, 25, 25),
-            ElementStroke = Color3.fromRGB(50, 50, 50), SecondaryElementStroke = Color3.fromRGB(40, 40, 40),
-            SliderBackground = Color3.fromRGB(50, 138, 220), SliderProgress = Color3.fromRGB(50, 138, 220),
-            SliderStroke = Color3.fromRGB(58, 163, 255), ToggleBackground = Color3.fromRGB(30, 30, 30),
-            ToggleEnabled = Color3.fromRGB(0, 146, 214), ToggleDisabled = Color3.fromRGB(100, 100, 100),
-            ToggleEnabledStroke = Color3.fromRGB(0, 170, 255), ToggleDisabledStroke = Color3.fromRGB(125, 125, 125),
-            ToggleEnabledOuterStroke = Color3.fromRGB(100, 100, 100), ToggleDisabledOuterStroke = Color3.fromRGB(65, 65, 65),
-            DropdownSelected = Color3.fromRGB(40, 40, 40), DropdownUnselected = Color3.fromRGB(30, 30, 30),
-            InputBackground = Color3.fromRGB(30, 30, 30), InputStroke = Color3.fromRGB(65, 65, 65),
-            PlaceholderColor = Color3.fromRGB(178, 178, 178)
-        },
-        Obsidian = {
-            TextColor = Color3.fromRGB(235, 235, 235), Background = Color3.fromRGB(8, 8, 12),
-            Topbar = Color3.fromRGB(14, 14, 20), Shadow = Color3.fromRGB(20, 20, 30),
-            NotificationBackground = Color3.fromRGB(20, 20, 28), NotificationActionsBackground = Color3.fromRGB(230, 230, 240),
-            TabBackground = Color3.fromRGB(60, 60, 70), TabStroke = Color3.fromRGB(65, 65, 75),
-            TabBackgroundSelected = Color3.fromRGB(180, 60, 60), TabTextColor = Color3.fromRGB(240, 240, 240),
-            SelectedTabTextColor = Color3.fromRGB(255, 255, 255), ElementBackground = Color3.fromRGB(25, 25, 32),
-            ElementBackgroundHover = Color3.fromRGB(35, 25, 25), SecondaryElementBackground = Color3.fromRGB(20, 20, 26),
-            ElementStroke = Color3.fromRGB(50, 50, 60), SecondaryElementStroke = Color3.fromRGB(40, 40, 50),
-            SliderBackground = Color3.fromRGB(40, 40, 50), SliderProgress = Color3.fromRGB(180, 60, 60),
-            SliderStroke = Color3.fromRGB(200, 70, 70), ToggleBackground = Color3.fromRGB(35, 35, 45),
-            ToggleEnabled = Color3.fromRGB(180, 60, 60), ToggleDisabled = Color3.fromRGB(70, 70, 85),
-            ToggleEnabledStroke = Color3.fromRGB(200, 70, 70), ToggleDisabledStroke = Color3.fromRGB(90, 90, 105),
-            ToggleEnabledOuterStroke = Color3.fromRGB(140, 50, 50), ToggleDisabledOuterStroke = Color3.fromRGB(55, 55, 65),
-            DropdownSelected = Color3.fromRGB(35, 35, 45), DropdownUnselected = Color3.fromRGB(25, 25, 35),
-            InputBackground = Color3.fromRGB(28, 28, 36), InputStroke = Color3.fromRGB(55, 55, 65),
-            PlaceholderColor = Color3.fromRGB(140, 140, 150)
-        }
-    }
+    Themes = {},
+    CurrentTheme = nil,
+    IsVisible = true,
+    IsMinimized = false
 }
 
-local CustlownAssetId = customAssetId or 10804731440
-local CustlownUI = useStudio and script.Parent:FindFirstChild('Custlown') or game:GetObjects("rbxassetid://"..CustlownAssetId)[1]
-local buildAttempts = 0
-local correctBuild = false
-local warned
-local globalLoaded
-local custlownDestroyed = false
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
 
-repeat
-    if CustlownUI:FindFirstChild('Build') and CustlownUI.Build.Value == InterfaceBuild then
-        correctBuild = true
-        break
-    end
-    correctBuild = false
-    if not warned then
-        warn('Custlown | Build Mismatch')
-        warned = true
-    end
-    local toDestroy
-    toDestroy, CustlownUI = CustlownUI, useStudio and script.Parent:FindFirstChild('Custlown') or game:GetObjects("rbxassetid://"..CustlownAssetId)[1]
-    if toDestroy and not useStudio then toDestroy:Destroy() end
-    buildAttempts = buildAttempts + 1
-until buildAttempts >= 2
+local gethui = gethui or (syn and syn.protect_gui) or nil
 
-CustlownUI.Enabled = false
-
-if gethui then
-    CustlownUI.Parent = gethui()
-elseif syn and syn.protect_gui then 
-    syn.protect_gui(CustlownUI)
-    CustlownUI.Parent = CoreGui
-elseif not useStudio and CoreGui:FindFirstChild("RobloxGui") then
-    CustlownUI.Parent = CoreGui:FindFirstChild("RobloxGui")
-elseif not useStudio then
-    CustlownUI.Parent = CoreGui
-end
-
-if gethui then
-    for _, Interface in ipairs(gethui():GetChildren()) do
-        if Interface.Name == CustlownUI.Name and Interface ~= CustlownUI then
-            Interface.Enabled = false
-            Interface.Name = "Custlown-Old"
-        end
-    end
-elseif not useStudio then
-    for _, Interface in ipairs(CoreGui:GetChildren()) do
-        if Interface.Name == CustlownUI.Name and Interface ~= CustlownUI then
-            Interface.Enabled = false
-            Interface.Name = "Custlown-Old"
-        end
-    end
-end
-
-do
-    local AssetPath = CustlownFolder.."/Assets"
-    local AssetBaseURL = "https://github.com/SiriusSoftwareLtd/Rayfield/blob/main/assets/"
-    local assetFiles = {
-        ["111263549366178"] = AssetBaseURL.."111263549366178.png?raw=true",
-        ["77891951053543"] = AssetBaseURL.."77891951053543.png?raw=true",
-        ["78137979054938"] = AssetBaseURL.."78137979054938.png?raw=true",
-        ["80503127983237"] = AssetBaseURL.."80503127983237.png?raw=true",
-        ["10137832201"] = AssetBaseURL.."10137832201.png?raw=true",
-        ["10137941941"] = AssetBaseURL.."10137941941.png?raw=true",
-        ["11036884234"] = AssetBaseURL.."11036884234.png?raw=true",
-        ["11413591840"] = AssetBaseURL.."11413591840.png?raw=true",
-        ["11745872910"] = AssetBaseURL.."11745872910.png?raw=true",
-        ["12577727209"] = AssetBaseURL.."12577727209.png?raw=true",
-        ["18458939117"] = AssetBaseURL.."18458939117.png?raw=true",
-        ["3259050989"] = AssetBaseURL.."3259050989.png?raw=true",
-        ["3523728077"] = AssetBaseURL.."3523728077.png?raw=true",
-        ["3602733521"] = AssetBaseURL.."3602733521.png?raw=true",
-        ["IconChevronTopMedium"] = AssetBaseURL.."IconChevronTopMedium.png?raw=true",
-        ["4483362458"] = AssetBaseURL.."4483362458.png?raw=true",
-        ["5587865193"] = AssetBaseURL.."5587865193.png?raw=true",
-        ["IconMagnifyingGlass2"] = AssetBaseURL.."IconMagnifyingGlass2.png?raw=true",
+Custlown.Themes = {
+    Obsidian = {
+        TextColor = Color3.fromRGB(235, 235, 235),
+        Background = Color3.fromRGB(8, 8, 12),
+        Topbar = Color3.fromRGB(14, 14, 20),
+        Accent = Color3.fromRGB(180, 60, 60),
+        ElementBg = Color3.fromRGB(20, 20, 26),
+        ElementBgHover = Color3.fromRGB(30, 22, 22),
+        Stroke = Color3.fromRGB(50, 50, 60),
+        SliderBg = Color3.fromRGB(38, 38, 48),
+        SliderFill = Color3.fromRGB(180, 60, 60),
+        ToggleBg = Color3.fromRGB(33, 33, 43),
+        ToggleActive = Color3.fromRGB(180, 60, 60),
+        DropdownSelected = Color3.fromRGB(28, 28, 36),
+        DropdownUnselected = Color3.fromRGB(22, 22, 30),
+        InputBg = Color3.fromRGB(26, 26, 34),
+        PlaceholderColor = Color3.fromRGB(140, 140, 150)
+    },
+    Graphite = {
+        TextColor = Color3.fromRGB(240, 240, 240),
+        Background = Color3.fromRGB(18, 18, 22),
+        Topbar = Color3.fromRGB(26, 26, 32),
+        Accent = Color3.fromRGB(110, 110, 130),
+        ElementBg = Color3.fromRGB(30, 30, 36),
+        ElementBgHover = Color3.fromRGB(38, 38, 44),
+        Stroke = Color3.fromRGB(55, 55, 65),
+        SliderBg = Color3.fromRGB(48, 48, 58),
+        SliderFill = Color3.fromRGB(110, 110, 130),
+        ToggleBg = Color3.fromRGB(40, 40, 48),
+        ToggleActive = Color3.fromRGB(110, 110, 130),
+        DropdownSelected = Color3.fromRGB(35, 35, 42),
+        DropdownUnselected = Color3.fromRGB(28, 28, 34),
+        InputBg = Color3.fromRGB(32, 32, 38),
+        PlaceholderColor = Color3.fromRGB(135, 135, 145)
+    },
+    Crimson = {
+        TextColor = Color3.fromRGB(255, 240, 240),
+        Background = Color3.fromRGB(20, 8, 8),
+        Topbar = Color3.fromRGB(30, 12, 12),
+        Accent = Color3.fromRGB(220, 50, 50),
+        ElementBg = Color3.fromRGB(35, 15, 15),
+        ElementBgHover = Color3.fromRGB(45, 20, 20),
+        Stroke = Color3.fromRGB(65, 30, 30),
+        SliderBg = Color3.fromRGB(50, 22, 22),
+        SliderFill = Color3.fromRGB(220, 50, 50),
+        ToggleBg = Color3.fromRGB(45, 18, 18),
+        ToggleActive = Color3.fromRGB(220, 50, 50),
+        DropdownSelected = Color3.fromRGB(40, 18, 18),
+        DropdownUnselected = Color3.fromRGB(32, 14, 14),
+        InputBg = Color3.fromRGB(38, 16, 16),
+        PlaceholderColor = Color3.fromRGB(160, 100, 100)
     }
-    for id, _ in assetFiles do customAssets[tostring(id)] = "" end
-    local hasCustomAsset = type(getcustomasset) == "function"
-    local hasFilesystem = type(writefile) == "function" and type(makefolder) == "function" and type(isfile) == "function" and type(isfolder) == "function"
-    if hasCustomAsset and hasFilesystem then
-        pcall(function()
-            ensureFolder(CustlownFolder); ensureFolder(AssetPath)
-            local function nextMissing()
-                for id, _ in assetFiles do if not isfile(AssetPath.."/"..tostring(id)..".png") then return id end end
-                return nil
-            end
-            if nextMissing() then
-                task.spawn(function()
-                    while true do
-                        local id = nextMissing()
-                        if not id then break end
-                        writefile(AssetPath.."/"..tostring(id)..".png", requestFunc({Url = assetFiles[id], Method = "GET"}).Body)
-                        task.wait()
-                    end
-                end)
-                while nextMissing() do task.wait(0.1) end
-            end
-            for id, _ in assetFiles do
-                local success, asset = pcall(getcustomasset, AssetPath.."/"..tostring(id)..".png")
-                if success then customAssets[tostring(id)] = asset end
-            end
-        end)
-    else
-        secureNotify("no_getcustomasset", "Custlown", "Your executor does not support getcustomasset. Some UI images may not render correctly.")
-    end
+}
+Custlown.CurrentTheme = Custlown.Themes.Obsidian
 
-    CustlownUI.Main.Shadow.Image.Image = customAssets[tostring(5587865193)]
-    CustlownUI.Main.Topbar.Hide.Image = customAssets[tostring(10137832201)]
-    CustlownUI.Main.Topbar.ChangeSize.Image = customAssets[tostring(10137941941)]
-    CustlownUI.Main.Topbar.Icon.Image = customAssets[tostring(78137979054938)]
-    CustlownUI.Main.Topbar.Search.Image = customAssets["IconMagnifyingGlass2"]
-    CustlownUI.Main.Elements.Template.Toggle.Switch.Shadow.Image = customAssets[tostring(3602733521)]
-    CustlownUI.Main.Elements.Template.Slider.Main.Shadow.Image = customAssets[tostring(3602733521)]
-    CustlownUI.Main.Elements.Template.Dropdown.Toggle.Image = customAssets["IconChevronTopMedium"]
-    CustlownUI.Main.Elements.Template.Label.Icon.Image = customAssets[tostring(11745872910)]
-    CustlownUI.Main.Elements.Template.ColorPicker.CPBackground.MainCP.Image = customAssets[tostring(11413591840)]
-    CustlownUI.Main.Elements.Template.ColorPicker.CPBackground.MainCP.MainPoint.Image = customAssets[tostring(3259050989)]
-    CustlownUI.Main.Elements.Template.ColorPicker.ColorSlider.SliderPoint.Image = customAssets[tostring(3259050989)]
-    CustlownUI.Main.TabList.Template.Image.Image = customAssets[tostring(4483362458)]
-    CustlownUI.Main.Search.Search.Image = customAssets[tostring(18458939117)]
-    CustlownUI.Main.Search.Shadow.Image = customAssets[tostring(5587865193)]
-    CustlownUI.Notifications.Template.Icon.Image = customAssets[tostring(77891951053543)]
-    CustlownUI.Notifications.Template.Shadow.Image = customAssets[tostring(3523728077)]
-    CustlownUI.Loading.Banner.Image = customAssets[tostring(111263549366178)]
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Custlown"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = gethui and gethui() or CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 700, 0, 550)
+MainFrame.Position = UDim2.new(0.5, -350, 0.5, -275)
+MainFrame.BackgroundColor3 = Custlown.CurrentTheme.Background
+MainFrame.BackgroundTransparency = 0
+MainFrame.BorderSizePixel = 1
+MainFrame.BorderColor3 = Custlown.CurrentTheme.Accent
+MainFrame.ClipsDescendants = true
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.Parent = MainFrame
+
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 45)
+TopBar.BackgroundColor3 = Custlown.CurrentTheme.Topbar
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 14)
+TopCorner.Parent = TopBar
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(0.4, 0, 1, 0)
+Title.Position = UDim2.new(0, 20, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Custlown"
+Title.TextColor3 = Custlown.CurrentTheme.TextColor
+Title.TextSize = 18
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 40, 0, 40)
+MinimizeBtn.Position = UDim2.new(1, -95, 0.5, -20)
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.Text = "─"
+MinimizeBtn.TextColor3 = Custlown.CurrentTheme.TextColor
+MinimizeBtn.TextSize = 22
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.Parent = TopBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Position = UDim2.new(1, -50, 0.5, -20)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Custlown.CurrentTheme.TextColor
+CloseBtn.TextSize = 18
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Parent = TopBar
+
+local TabBar = Instance.new("Frame")
+TabBar.Size = UDim2.new(0, 160, 1, -45)
+TabBar.Position = UDim2.new(0, 0, 0, 45)
+TabBar.BackgroundColor3 = Custlown.CurrentTheme.Background
+TabBar.BackgroundTransparency = 0.4
+TabBar.BorderSizePixel = 1
+TabBar.BorderColor3 = Custlown.CurrentTheme.Stroke
+TabBar.Parent = MainFrame
+
+local TabContainer = Instance.new("ScrollingFrame")
+TabContainer.Size = UDim2.new(1, -12, 1, -12)
+TabContainer.Position = UDim2.new(0, 6, 0, 6)
+TabContainer.BackgroundTransparency = 1
+TabContainer.BorderSizePixel = 0
+TabContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+TabContainer.ScrollBarThickness = 4
+TabContainer.ScrollBarImageColor3 = Custlown.CurrentTheme.Accent
+TabContainer.Parent = TabBar
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.Padding = UDim.new(0, 8)
+TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+TabLayout.Parent = TabContainer
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, -175, 1, -60)
+ContentFrame.Position = UDim2.new(0, 170, 0, 55)
+ContentFrame.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+ContentFrame.BackgroundTransparency = 0.15
+ContentFrame.BorderSizePixel = 1
+ContentFrame.BorderColor3 = Custlown.CurrentTheme.Stroke
+ContentFrame.Parent = MainFrame
+
+local ContentCorner = Instance.new("UICorner")
+ContentCorner.CornerRadius = UDim.new(0, 12)
+ContentCorner.Parent = ContentFrame
+
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Size = UDim2.new(1, -16, 1, -16)
+ScrollFrame.Position = UDim2.new(0, 8, 0, 8)
+ScrollFrame.BackgroundTransparency = 1
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollFrame.ScrollBarThickness = 6
+ScrollFrame.ScrollBarImageColor3 = Custlown.CurrentTheme.Accent
+ScrollFrame.ElasticBehavior = Enum.ElasticBehavior.Never
+ScrollFrame.Parent = ContentFrame
+
+local ScrollLayout = Instance.new("UIListLayout")
+ScrollLayout.Padding = UDim.new(0, 10)
+ScrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ScrollLayout.Parent = ScrollFrame
+
+local ScrollPadding = Instance.new("UIPadding")
+ScrollPadding.PaddingTop = UDim.new(0, 10)
+ScrollPadding.PaddingBottom = UDim.new(0, 10)
+ScrollPadding.PaddingLeft = UDim.new(0, 8)
+ScrollPadding.PaddingRight = UDim.new(0, 8)
+ScrollPadding.Parent = ScrollFrame
+
+local Tabs = {}
+
+local function updateCanvasSize()
+    task.wait()
+    local height = ScrollLayout.AbsoluteContentSize.Y
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, height + 30)
 end
+ScrollLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvasSize)
 
-local minSize = Vector2.new(1024, 768)
-local useMobileSizing = CustlownUI.AbsoluteSize.X < minSize.X and CustlownUI.AbsoluteSize.Y < minSize.Y
-local useMobilePrompt = UserInputService.TouchEnabled
-
-local Main = CustlownUI.Main
-local MPrompt = CustlownUI:FindFirstChild('Prompt')
-local Topbar = Main.Topbar
-local Elements = Main.Elements
-local LoadingFrame = Main.LoadingFrame
-local TabList = Main.TabList
-local dragBar = CustlownUI:FindFirstChild('Drag')
-local dragInteract = dragBar and dragBar.Interact or nil
-local dragBarCosmetic = dragBar and dragBar.Drag or nil
-local dragOffset = 255
-local dragOffsetMobile = 150
-
-CustlownUI.DisplayOrder = 100
-LoadingFrame.Version.Text = Release
-
-local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua')
-
-local CFileName = nil
-local CEnabled = false
-local Minimised = false
-local Hidden = false
-local Debounce = false
-local searchOpen = false
-local Notifications = CustlownUI.Notifications
-local keybindConnections = {}
-local SelectedTheme = CustlownLibrary.Theme.Obsidian
-
-local function ChangeTheme(Theme)
-    if typeof(Theme) == 'string' then SelectedTheme = CustlownLibrary.Theme[Theme]
-    elseif typeof(Theme) == 'table' then SelectedTheme = Theme end
-    CustlownUI.Main.BackgroundColor3 = SelectedTheme.Background
-    CustlownUI.Main.Topbar.BackgroundColor3 = SelectedTheme.Topbar
-    CustlownUI.Main.Topbar.CornerRepair.BackgroundColor3 = SelectedTheme.Topbar
-    CustlownUI.Main.Shadow.Image.ImageColor3 = SelectedTheme.Shadow
-    CustlownUI.Main.Topbar.ChangeSize.ImageColor3 = SelectedTheme.TextColor
-    CustlownUI.Main.Topbar.Hide.ImageColor3 = SelectedTheme.TextColor
-    CustlownUI.Main.Topbar.Search.ImageColor3 = SelectedTheme.TextColor
-    if Topbar:FindFirstChild('Settings') then
-        CustlownUI.Main.Topbar.Settings.ImageColor3 = SelectedTheme.TextColor
-        CustlownUI.Main.Topbar.Divider.BackgroundColor3 = SelectedTheme.ElementStroke
-    end
-    Main.Search.BackgroundColor3 = SelectedTheme.TextColor
-    Main.Search.Shadow.ImageColor3 = SelectedTheme.TextColor
-    Main.Search.Search.ImageColor3 = SelectedTheme.TextColor
-    Main.Search.Input.PlaceholderColor3 = SelectedTheme.TextColor
-    Main.Search.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-    if Main:FindFirstChild('Notice') then Main.Notice.BackgroundColor3 = SelectedTheme.Background end
-    for _, text in ipairs(CustlownUI:GetDescendants()) do
-        if text.Parent.Parent ~= Notifications then
-            if text:IsA('TextLabel') or text:IsA('TextBox') then text.TextColor3 = SelectedTheme.TextColor end
+function Custlown:CreateTab(name)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -12, 0, 42)
+    btn.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    btn.BackgroundTransparency = 0.5
+    btn.Text = name
+    btn.TextColor3 = Custlown.CurrentTheme.TextColor
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = TabContainer
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 8)
+    btnCorner.Parent = btn
+    
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, 0, 1, 0)
+    content.BackgroundTransparency = 1
+    content.Visible = #Tabs == 0
+    content.Parent = ScrollFrame
+    
+    local contentLayout = Instance.new("UIListLayout")
+    contentLayout.Padding = UDim.new(0, 10)
+    contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    contentLayout.Parent = content
+    
+    btn.MouseButton1Click:Connect(function()
+        for _, tab in pairs(Tabs) do
+            tab.Content.Visible = false
+            tab.Button.BackgroundTransparency = 0.5
+            tab.Button.TextColor3 = Custlown.CurrentTheme.TextColor
         end
-    end
-    for _, TabPage in ipairs(Elements:GetChildren()) do
-        for _, Element in ipairs(TabPage:GetChildren()) do
-            if Element.ClassName == "Frame" and Element.Name ~= "Placeholder" and Element.Name ~= "SectionSpacing" and Element.Name ~= "Divider" and Element.Name ~= "SectionTitle" and Element.Name ~= "SearchTitle" then
-                Element.BackgroundColor3 = SelectedTheme.ElementBackground
-                Element.UIStroke.Color = SelectedTheme.ElementStroke
-            end
-        end
-    end
-end
-
-local function resolveIcon(icon)
-    if not icon or icon == 0 then return "", nil, nil end
-    if type(icon) == "string" and (string.find(icon, "rbxasset://") == 1 or string.find(icon, "rbxthumb://") == 1) then return icon, nil, nil end
-    if secureMode then return "", nil, nil end
-    if typeof(icon) == "string" and Icons then
-        local name = string.lower(icon)
-        local sizedicons = Icons['48px']
-        local r = sizedicons[name]
-        if r then
-            return "rbxassetid://" .. r[1], Vector2.new(r[2][1], r[2][2]), Vector2.new(r[3][1], r[3][2])
-        end
-    end
-    return "rbxassetid://" .. tostring(icon), nil, nil
-end
-
-local function makeDraggable(object, dragObject, enableTaptic, tapticOffset)
-    local dragging = false
-    local relative = nil
-    local offset = Vector2.zero
-    local screenGui = object:FindFirstAncestorWhichIsA("ScreenGui")
-    if screenGui and screenGui.IgnoreGuiInset then offset += getService('GuiService'):GetGuiInset() end
-    local function connectFunctions()
-        if dragBar and enableTaptic then
-            dragBar.MouseEnter:Connect(function()
-                if not dragging and not Hidden then
-                    TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.5, Size = UDim2.new(0, 120, 0, 4)}):Play()
-                end
-            end)
-            dragBar.MouseLeave:Connect(function()
-                if not dragging and not Hidden then
-                    TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.7, Size = UDim2.new(0, 100, 0, 4)}):Play()
-                end
-            end)
-        end
-    end
-    connectFunctions()
-    dragObject.InputBegan:Connect(function(input, processed)
-        if processed then return end
-        local inputType = input.UserInputType.Name
-        if inputType == "MouseButton1" or inputType == "Touch" then
-            dragging = true
-            relative = object.AbsolutePosition + object.AbsoluteSize * object.AnchorPoint - UserInputService:GetMouseLocation()
-            if enableTaptic and not Hidden then
-                TweenService:Create(dragBarCosmetic, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 110, 0, 4), BackgroundTransparency = 0}):Play()
-            end
-        end
+        content.Visible = true
+        btn.BackgroundTransparency = 0.1
+        btn.TextColor3 = Custlown.CurrentTheme.Accent
+        updateCanvasSize()
     end)
-    local inputEnded = UserInputService.InputEnded:Connect(function(input)
-        if not dragging then return end
-        local inputType = input.UserInputType.Name
-        if inputType == "MouseButton1" or inputType == "Touch" then
-            dragging = false
-            if enableTaptic and not Hidden then
-                TweenService:Create(dragBarCosmetic, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 100, 0, 4), BackgroundTransparency = 0.7}):Play()
-            end
-        end
+    
+    local tab = {Name = name, Button = btn, Content = content}
+    table.insert(Tabs, tab)
+    updateCanvasSize()
+    return content
+end
+
+function Custlown:CreateSection(parent, title)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(1, 0, 0, 35)
+    section.BackgroundTransparency = 1
+    section.Parent = parent
+    
+    local line = Instance.new("Frame")
+    line.Size = UDim2.new(1, 0, 0, 1)
+    line.Position = UDim2.new(0, 0, 0, 28)
+    line.BackgroundColor3 = Custlown.CurrentTheme.Accent
+    line.BackgroundTransparency = 0.4
+    line.BorderSizePixel = 0
+    line.Parent = section
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 25)
+    label.BackgroundTransparency = 1
+    label.Text = title
+    label.TextColor3 = Custlown.CurrentTheme.Accent
+    label.TextSize = 14
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = section
+    
+    return section
+end
+
+function Custlown:CreateButton(parent, text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 42)
+    btn.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    btn.BackgroundTransparency = 0.5
+    btn.Text = text
+    btn.TextColor3 = Custlown.CurrentTheme.TextColor
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = btn
+    
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundTransparency = 0.2}):Play()
     end)
-    local renderStepped = RunService.RenderStepped:Connect(function()
-        if dragging and not Hidden then
-            local position = UserInputService:GetMouseLocation() + relative + offset
-            if enableTaptic and tapticOffset then
-                TweenService:Create(object, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y)}):Play()
-                TweenService:Create(dragObject.Parent, TweenInfo.new(0.05, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))}):Play()
-            else
-                if dragBar and tapticOffset then
-                    dragBar.Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))
-                end
-                object.Position = UDim2.fromOffset(position.X, position.Y)
-            end
-        end
+    
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundTransparency = 0.5}):Play()
     end)
-    object.Destroying:Connect(function()
-        if inputEnded then inputEnded:Disconnect()
-        if renderStepped then renderStepped:Disconnect() end
-    end)
-end
-
-local function PackColor(Color) return {R = Color.R * 255, G = Color.G * 255, B = Color.B * 255} end
-local function UnpackColor(Color) return Color3.fromRGB(Color.R, Color.G, Color.B) end
-
-local function SaveConfiguration()
-    if not CEnabled or not globalLoaded then return end
-    local Data = {}
-    for i, v in pairs(CustlownLibrary.Flags) do
-        if v.Type == "ColorPicker" then Data[i] = PackColor(v.Color)
-        else Data[i] = v.CurrentValue or v.CurrentKeybind or v.CurrentOption or v.Color end
-    end
-    callSafely(writefile, ConfigurationFolder .. "/" .. CFileName .. ConfigurationExtension, tostring(HttpService:JSONEncode(Data)))
-end
-
-function CustlownLibrary:Notify(data)
-    task.spawn(function()
-        local newNotification = Notifications.Template:Clone()
-        newNotification.Name = data.Title or 'No Title Provided'
-        newNotification.Parent = Notifications
-        newNotification.LayoutOrder = #Notifications:GetChildren()
-        newNotification.Visible = false
-        newNotification.Title.Text = data.Title or "Unknown Title"
-        newNotification.Description.Text = data.Content or "Unknown Content"
-        if data.Image then
-            local img, rectOffset, rectSize = resolveIcon(data.Image)
-            newNotification.Icon.Image = img
-            if rectOffset then newNotification.Icon.ImageRectOffset = rectOffset end
-            if rectSize then newNotification.Icon.ImageRectSize = rectSize end
-        else
-            newNotification.Icon.Image = ""
-        end
-        newNotification.Title.TextColor3 = SelectedTheme.TextColor
-        newNotification.Description.TextColor3 = SelectedTheme.TextColor
-        newNotification.BackgroundColor3 = SelectedTheme.Background
-        newNotification.UIStroke.Color = SelectedTheme.TextColor
-        newNotification.Icon.ImageColor3 = SelectedTheme.TextColor
-        newNotification.BackgroundTransparency = 1
-        newNotification.Title.TextTransparency = 1
-        newNotification.Description.TextTransparency = 1
-        newNotification.UIStroke.Transparency = 1
-        newNotification.Shadow.ImageTransparency = 1
-        newNotification.Size = UDim2.new(1, 0, 0, 800)
-        newNotification.Icon.ImageTransparency = 1
-        newNotification.Icon.BackgroundTransparency = 1
-        task.wait()
-        newNotification.Visible = true
-        local bounds = {newNotification.Title.TextBounds.Y, newNotification.Description.TextBounds.Y}
-        newNotification.Size = UDim2.new(1, -60, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)
-        newNotification.Icon.Size = UDim2.new(0, 32, 0, 32)
-        newNotification.Icon.Position = UDim2.new(0, 20, 0.5, 0)
-        TweenService:Create(newNotification, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, 0, 0, math.max(bounds[1] + bounds[2] + 31, 60))}):Play()
-        task.wait(0.15)
-        TweenService:Create(newNotification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.45}):Play()
-        TweenService:Create(newNotification.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-        task.wait(0.05)
-        TweenService:Create(newNotification.Icon, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-        task.wait(0.05)
-        TweenService:Create(newNotification.Description, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.35}):Play()
-        TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 0.95}):Play()
-        TweenService:Create(newNotification.Shadow, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.82}):Play()
-        local waitDuration = math.min(math.max((#newNotification.Description.Text * 0.1) + 2.5, 3), 10)
-        task.wait(data.Duration or waitDuration)
-        newNotification.Icon.Visible = false
-        TweenService:Create(newNotification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-        TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-        TweenService:Create(newNotification.Shadow, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-        TweenService:Create(newNotification.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-        TweenService:Create(newNotification.Description, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-        TweenService:Create(newNotification, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -90, 0, 0)}):Play()
-        task.wait(1)
-        TweenService:Create(newNotification, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -90, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)}):Play()
-        newNotification.Visible = false
-        newNotification:Destroy()
-    end)
-end
-
-local function openSearch()
-    searchOpen = true
-    Main.Search.BackgroundTransparency = 1
-    Main.Search.Shadow.ImageTransparency = 1
-    Main.Search.Input.TextTransparency = 1
-    Main.Search.Search.ImageTransparency = 1
-    Main.Search.UIStroke.Transparency = 1
-    Main.Search.Size = UDim2.new(1, 0, 0, 80)
-    Main.Search.Position = UDim2.new(0.5, 0, 0, 70)
-    Main.Search.Input.Interactable = true
-    Main.Search.Visible = true
-    for _, tabbtn in ipairs(TabList:GetChildren()) do
-        if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
-            tabbtn.Interact.Visible = false
-            TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-            TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-            TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-            TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-        end
-    end
-    Main.Search.Input:CaptureFocus()
-    TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.05, Enum.EasingStyle.Quint), {ImageTransparency = 0.95}):Play()
-    TweenService:Create(Main.Search, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.5, 0, 0, 57), BackgroundTransparency = 0.9}):Play()
-    TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.8}):Play()
-    TweenService:Create(Main.Search.Input, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-    TweenService:Create(Main.Search.Search, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.5}):Play()
-    TweenService:Create(Main.Search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -35, 0, 35)}):Play()
-end
-
-local function closeSearch()
-    searchOpen = false
-    TweenService:Create(Main.Search, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 1, Size = UDim2.new(1, -55, 0, 30)}):Play()
-    TweenService:Create(Main.Search.Search, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
-    TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
-    TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {Transparency = 1}):Play()
-    TweenService:Create(Main.Search.Input, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {TextTransparency = 1}):Play()
-    for _, tabbtn in ipairs(TabList:GetChildren()) do
-        if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
-            tabbtn.Interact.Visible = true
-            if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
-                TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-                TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-                TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-                TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-            else
-                TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-                TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-                TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-                TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-            end
-        end
-    end
-    Main.Search.Input.Text = ''
-    Main.Search.Input.Interactable = false
-end
-
-local function setElementsVisible(show)
-    for _, tab in ipairs(Elements:GetChildren()) do
-        if tab.Name ~= "Template" and tab.ClassName == "ScrollingFrame" and tab.Name ~= "Placeholder" then
-            for _, element in ipairs(tab:GetChildren()) do
-                if element.ClassName == "Frame" then
-                    if element.Name ~= "SectionSpacing" and element.Name ~= "Placeholder" then
-                        if element.Name == "SectionTitle" or element.Name == 'SearchTitle' then
-                            TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = show and 0.4 or 1}):Play()
-                        elseif element.Name == 'Divider' then
-                            TweenService:Create(element.Divider, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = show and 0.85 or 1}):Play()
-                        else
-                            local bgTarget = element:GetAttribute("BackgroundTransparencyTarget") or 0
-                            local strokeTarget = element:GetAttribute("UIStrokeTransparencyTarget") or 0
-                            local titleTarget = element:GetAttribute("TitleTextTransparencyTarget") or 0
-                            TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = show and bgTarget or 1}):Play()
-                            TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = show and strokeTarget or 1}):Play()
-                            TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = show and titleTarget or 1}):Play()
-                        end
-                        for _, child in ipairs(element:GetChildren()) do
-                            if child.ClassName == "Frame" or child.ClassName == "TextLabel" or child.ClassName == "TextBox" or child.ClassName == "ImageButton" or child.ClassName == "ImageLabel" then
-                                child.Visible = show
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-local function setTabButtonsVisible(show)
-    for _, tabbtn in ipairs(TabList:GetChildren()) do
-        if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
-            if show then
-                if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
-                    TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-                    TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-                    TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-                    TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                else
-                    TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-                    TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-                    TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-                    TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-                end
-            else
-                TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-                TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-                TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-                TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-            end
-        end
-    end
-end
-
-local function Hide(notify)
-    if MPrompt then
-        MPrompt.Title.TextColor3 = Color3.fromRGB(255,255,255)
-        MPrompt.Position = UDim2.new(0.5,0,0,-50)
-        MPrompt.Size = UDim2.new(0,40,0,10)
-        MPrompt.BackgroundTransparency = 1
-        MPrompt.Title.TextTransparency = 1
-        MPrompt.Visible = true
-    end
-    task.spawn(closeSearch)
-    Debounce = true
-    if notify then
-        CustlownLibrary:Notify({Title = "Interface Hidden", Content = "Press " .. tostring(getSetting("General", "custlownOpen")) .. " to unhide", Duration = 7})
-    end
-    TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,470,0,0)}):Play()
-    TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,470,0,45)}):Play()
-    TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(Main.Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(Main.Topbar.CornerRepair, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(Main.Topbar.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-    TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-    TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-    if dragBarCosmetic then TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play() end
-    if useMobilePrompt and MPrompt then
-        TweenService:Create(MPrompt, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,120,0,30), Position = UDim2.new(0.5,0,0,20), BackgroundTransparency = 0.3}):Play()
-        TweenService:Create(MPrompt.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.3}):Play()
-    end
-    for _, btn in ipairs(Topbar:GetChildren()) do
-        if btn.ClassName == "ImageButton" then TweenService:Create(btn, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play() end
-    end
-    setTabButtonsVisible(false)
-    if dragInteract then dragInteract.Visible = false end
-    setElementsVisible(false)
-    task.wait(0.5)
-    Main.Visible = false
-    Debounce = false
-end
-
-local function Maximise()
-    Debounce = true
-    Topbar.ChangeSize.Image = customAssets[tostring(10137941941)]
-    TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-    TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-    TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.7}):Play()
-    TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0,500,0,275) or UDim2.new(0,500,0,475)}):Play()
-    TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,500,0,45)}):Play()
-    TabList.Visible = true
-    task.wait(0.2)
-    Elements.Visible = true
-    setElementsVisible(true)
-    task.wait(0.1)
-    setTabButtonsVisible(true)
-    task.wait(0.5)
-    Debounce = false
-end
-
-local function Unhide()
-    Debounce = true
-    Main.Position = UDim2.new(0.5,0,0.5,0)
-    Main.Visible = true
-    TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0,500,0,275) or UDim2.new(0,500,0,475)}):Play()
-    TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,500,0,45)}):Play()
-    TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-    TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(Main.Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(Main.Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(Main.Topbar.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-    if MPrompt then
-        TweenService:Create(MPrompt, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,40,0,10), Position = UDim2.new(0.5,0,0,-50), BackgroundTransparency = 1}):Play()
-        TweenService:Create(MPrompt.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-        task.spawn(function() task.wait(0.5); MPrompt.Visible = false end)
-    end
-    if Minimised then task.spawn(Maximise) end
-    dragBar.Position = useMobileSizing and UDim2.new(0.5,0,0.5,dragOffsetMobile) or UDim2.new(0.5,0,0.5,dragOffset)
-    dragInteract.Visible = true
-    for _, btn in ipairs(Topbar:GetChildren()) do
-        if btn.ClassName == "ImageButton" then
-            if btn.Name == 'Icon' then TweenService:Create(btn, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-            else TweenService:Create(btn, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play() end
-        end
-    end
-    setTabButtonsVisible(true)
-    setElementsVisible(true)
-    TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.5}):Play()
-    task.wait(0.5)
-    Minimised = false
-    Debounce = false
-end
-
-local function Minimise()
-    Debounce = true
-    Topbar.ChangeSize.Image = customAssets[tostring(11036884234)]
-    Topbar.UIStroke.Color = SelectedTheme.ElementStroke
-    task.spawn(closeSearch)
-    setTabButtonsVisible(false)
-    setElementsVisible(false)
-    TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-    TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-    TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,495,0,45)}):Play()
-    TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,495,0,45)}):Play()
-    task.wait(0.3)
-    Elements.Visible = false
-    TabList.Visible = false
-    task.wait(0.2)
-    Debounce = false
-end
-
-local function saveSettings()
-    local encoded
-    pcall(function() encoded = HttpService:JSONEncode(settingsTable) end)
-    if encoded then callSafely(writefile, CustlownFolder..'/settings'..ConfigurationExtension, encoded) end
-end
-
-local function updateSetting(category, setting, value)
-    if not settingsInitialized then return end
-    settingsTable[category][setting].Value = value
-    overriddenSettings[category .. "." .. setting] = nil
-    saveSettings()
-end
-
-local function createSettings(window)
-    if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
-        if Topbar['Settings'] then Topbar.Settings.Visible = false end
-        Topbar['Search'].Position = UDim2.new(1, -75, 0.5, 0)
-        warn('Can\'t create settings as no file-saving functionality is available.')
-        return
-    end
-    local newTab = window:CreateTab('Custlown Settings', 0, true)
-    if TabList['Custlown Settings'] then TabList['Custlown Settings'].LayoutOrder = 1000 end
-    if Elements['Custlown Settings'] then Elements['Custlown Settings'].LayoutOrder = 1000 end
-    for categoryName, settingCategory in pairs(settingsTable) do
-        newTab:CreateSection(categoryName)
-        for settingName, setting in pairs(settingCategory) do
-            if setting.Type == 'input' then
-                setting.Element = newTab:CreateInput({Name = setting.Name, CurrentValue = setting.Value, PlaceholderText = setting.Placeholder, Ext = true, RemoveTextAfterFocusLost = setting.ClearOnFocus, Callback = function(v) updateSetting(categoryName, settingName, v) end})
-            elseif setting.Type == 'toggle' then
-                setting.Element = newTab:CreateToggle({Name = setting.Name, CurrentValue = setting.Value, Ext = true, Callback = function(v) updateSetting(categoryName, settingName, v) end})
-            elseif setting.Type == 'bind' then
-                setting.Element = newTab:CreateKeybind({Name = setting.Name, CurrentKeybind = setting.Value, HoldToInteract = false, Ext = true, CallOnChange = true, Callback = function(v) updateSetting(categoryName, settingName, v) end})
-            end
-        end
-    end
-    settingsCreated = true
-    loadSettings()
-    saveSettings()
-end
-
-function CustlownLibrary:CreateWindow(Settings)
-    if CustlownUI:FindFirstChild('Loading') then
-        if getgenv and not getgenv().custlownCached then
-            CustlownUI.Enabled = true
-            CustlownUI.Loading.Visible = true
-            task.wait(1.4)
-            CustlownUI.Loading.Visible = false
-        end
-    end
-    if getgenv then getgenv().custlownCached = true end
-    if not correctBuild and not Settings.DisableBuildWarnings then
-        task.delay(3, function() CustlownLibrary:Notify({Title = 'Build Mismatch', Content = 'Custlown may encounter issues', Duration = 8}) end)
-    end
-    if Settings.ToggleUIKeybind then
-        local keybind = Settings.ToggleUIKeybind
-        if type(keybind) == "string" then
-            keybind = string.upper(keybind)
-            overrideSetting("General", "custlownOpen", keybind)
-        elseif typeof(keybind) == "EnumItem" then
-            overrideSetting("General", "custlownOpen", keybind.Name)
-        else error("ToggleUIKeybind must be a string or KeyCode enum") end
-    end
-    ensureFolder(CustlownFolder)
-    local Passthrough = false
-    Topbar.Title.Text = Settings.Name
-    Main.Size = UDim2.new(0,420,0,100)
-    Main.Visible = true
-    Main.BackgroundTransparency = 1
-    if Main:FindFirstChild('Notice') then Main.Notice.Visible = false end
-    Main.Shadow.Image.ImageTransparency = 1
-    LoadingFrame.Title.TextTransparency = 1
-    LoadingFrame.Subtitle.TextTransparency = 1
-    if Settings.ShowText then MPrompt.Title.Text = 'Show '..Settings.ShowText end
-    LoadingFrame.Version.TextTransparency = 1
-    LoadingFrame.Title.Text = Settings.LoadingTitle or "Custlown"
-    LoadingFrame.Subtitle.Text = Settings.LoadingSubtitle or "Interface Suite"
-    if Settings.LoadingTitle ~= "Rayfield Interface Suite" then LoadingFrame.Version.Text = "Custlown UI" end
-    if Settings.Icon and Settings.Icon ~= 0 and Topbar:FindFirstChild('Icon') then
-        Topbar.Icon.Visible = true
-        Topbar.Title.Position = UDim2.new(0,47,0.5,0)
-        if Settings.Icon then
-            local img, rectOffset, rectSize = resolveIcon(Settings.Icon)
-            Topbar.Icon.Image = img
-            if rectOffset then Topbar.Icon.ImageRectOffset = rectOffset end
-            if rectSize then Topbar.Icon.ImageRectSize = rectSize end
-        else Topbar.Icon.Image = "" end
-    end
-    if dragBar then
-        dragBar.Visible = false
-        dragBarCosmetic.BackgroundTransparency = 1
-        dragBar.Visible = true
-    end
-    if Settings.Theme then
-        local success = pcall(ChangeTheme, Settings.Theme)
-        if not success then pcall(ChangeTheme, 'Obsidian') end
-    else ChangeTheme('Obsidian') end
-    Topbar.Visible = false
-    Elements.Visible = false
-    LoadingFrame.Visible = true
-    pcall(function()
-        if not Settings.ConfigurationSaving.FileName then Settings.ConfigurationSaving.FileName = tostring(game.PlaceId) end
-        if Settings.ConfigurationSaving.Enabled == nil then Settings.ConfigurationSaving.Enabled = false end
-        CFileName = Settings.ConfigurationSaving.FileName
-        ConfigurationFolder = Settings.ConfigurationSaving.FolderName or ConfigurationFolder
-        CEnabled = Settings.ConfigurationSaving.Enabled
-        if Settings.ConfigurationSaving.Enabled then ensureFolder(ConfigurationFolder) end
-    end)
-    makeDraggable(Main, Topbar, false, {dragOffset, dragOffsetMobile})
-    if dragBar then dragBar.Position = useMobileSizing and UDim2.new(0.5,0,0.5,dragOffsetMobile) or UDim2.new(0.5,0,0.5,dragOffset); makeDraggable(Main, dragInteract, true, {dragOffset, dragOffsetMobile}) end
-    for _, TabButton in ipairs(TabList:GetChildren()) do
-        if TabButton.ClassName == "Frame" and TabButton.Name ~= "Placeholder" then
-            TabButton.BackgroundTransparency = 1
-            TabButton.Title.TextTransparency = 1
-            TabButton.Image.ImageTransparency = 1
-            TabButton.UIStroke.Transparency = 1
-        end
-    end
-    if (Settings.KeySystem) then Passthrough = true end
-    if Settings.KeySystem then repeat task.wait() until Passthrough end
-    Notifications.Template.Visible = false
-    Notifications.Visible = true
-    CustlownUI.Enabled = true
-    task.wait(0.5)
-    TweenService:Create(Main, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-    task.wait(0.1)
-    TweenService:Create(LoadingFrame.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-    task.wait(0.05)
-    TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-    task.wait(0.05)
-    TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-    Elements.Template.LayoutOrder = 100000
-    Elements.Template.Visible = false
-    Elements.UIPageLayout.FillDirection = Enum.FillDirection.Horizontal
-    Elements.UIPageLayout.ScrollWheelInputEnabled = false
-    TabList.Template.Visible = false
-    local FirstTab = false
-    local Window = {}
-    function Window:CreateTab(Name, Image, Ext)
-        local SDone = false
-        local TabButton = TabList.Template:Clone()
-        TabButton.Name = Name
-        TabButton.Title.Text = Name
-        TabButton.Parent = TabList
-        TabButton.Title.TextWrapped = false
-        TabButton.Size = UDim2.new(0, TabButton.Title.TextBounds.X + 30, 0, 30)
-        if Image and Image ~= 0 then
-            local img, rectOffset, rectSize = resolveIcon(Image)
-            TabButton.Image.Image = img
-            if rectOffset then TabButton.Image.ImageRectOffset = rectOffset end
-            if rectSize then TabButton.Image.ImageRectSize = rectSize end
-            TabButton.Title.AnchorPoint = Vector2.new(0,0.5)
-            TabButton.Title.Position = UDim2.new(0,37,0.5,0)
-            TabButton.Image.Visible = true
-            TabButton.Title.TextXAlignment = Enum.TextXAlignment.Left
-            TabButton.Size = UDim2.new(0, TabButton.Title.TextBounds.X + 52, 0, 30)
-        end
-        TabButton.BackgroundTransparency = 1
-        TabButton.Title.TextTransparency = 1
-        TabButton.Image.ImageTransparency = 1
-        TabButton.UIStroke.Transparency = 1
-        TabButton.Visible = not Ext or false
-        local TabPage = Elements.Template:Clone()
-        TabPage.Name = Name
-        TabPage.Visible = true
-        TabPage.LayoutOrder = Ext and 10000 or #Elements:GetChildren()
-        for _, TemplateElement in ipairs(TabPage:GetChildren()) do
-            if TemplateElement.ClassName == "Frame" and TemplateElement.Name ~= "Placeholder" then
-                TemplateElement:Destroy()
-            end
-        end
-        TabPage.Parent = Elements
-        if not FirstTab and not Ext then
-            Elements.UIPageLayout.Animated = false
-            Elements.UIPageLayout:JumpTo(TabPage)
-            Elements.UIPageLayout.Animated = true
-        end
-        TabButton.UIStroke.Color = SelectedTheme.TabStroke
-        if Elements.UIPageLayout.CurrentPage == TabPage then
-            TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-            TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-            TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-        else
-            TabButton.BackgroundColor3 = SelectedTheme.TabBackground
-            TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
-            TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
-        end
+    
+    btn.MouseButton1Click:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundTransparency = 0.7}):Play()
+        if callback then callback()
         task.wait(0.1)
-        if FirstTab or Ext then
-            TabButton.BackgroundColor3 = SelectedTheme.TabBackground
-            TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
-            TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
-            TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-            TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-            TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-            TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-        elseif not Ext then
-            FirstTab = Name
-            TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-            TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-            TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-            TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-            TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-        end
-        TabButton.Interact.MouseButton1Click:Connect(function()
-            if Minimised then return end
-            TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-            TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-            TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackgroundSelected}):Play()
-            TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.SelectedTabTextColor}):Play()
-            TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.SelectedTabTextColor}):Play()
-            for _, OtherTabButton in ipairs(TabList:GetChildren()) do
-                if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
-                    TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
-                    TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
-                    TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
-                    TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-                    TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-                    TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-                    TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-                end
-            end
-            if Elements.UIPageLayout.CurrentPage ~= TabPage then Elements.UIPageLayout:JumpTo(TabPage) end
-        end)
-        local Tab = {}
-        function Tab:CreateButton(ButtonSettings)
-            local ButtonValue = {}
-            local Button = Elements.Template.Button:Clone()
-            Button.Name = ButtonSettings.Name
-            Button.Title.Text = ButtonSettings.Name
-            Button.Visible = true
-            Button.Parent = TabPage
-            Button.BackgroundTransparency = 1
-            Button.UIStroke.Transparency = 1
-            Button.Title.TextTransparency = 1
-            TweenService:Create(Button, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(Button.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-            TweenService:Create(Button.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            Button.Interact.MouseButton1Click:Connect(function()
-                local Success, Response = pcall(ButtonSettings.Callback)
-                if custlownDestroyed then return end
-                if not Success then
-                    TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                    TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-                    TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    Button.Title.Text = "Callback Error"
-                    print("Custlown | "..ButtonSettings.Name.." Callback Error " ..tostring(Response))
-                    task.wait(0.5)
-                    Button.Title.Text = ButtonSettings.Name
-                    TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.9}):Play()
-                    TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                else
-                    if not ButtonSettings.Ext then SaveConfiguration(ButtonSettings.Name..'\n') end
-                    TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                    TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-                    TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    task.wait(0.2)
-                    TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.9}):Play()
-                    TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-            end)
-            Button.MouseEnter:Connect(function()
-                TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.7}):Play()
-            end)
-            Button.MouseLeave:Connect(function()
-                TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.9}):Play()
-            end)
-            function ButtonValue:Set(NewButton) Button.Title.Text = NewButton; Button.Name = NewButton end
-            return ButtonValue
-        end
-        function Tab:CreateColorPicker(ColorPickerSettings)
-            ColorPickerSettings.Type = "ColorPicker"
-            local ColorPicker = Elements.Template.ColorPicker:Clone()
-            local Background = ColorPicker.CPBackground
-            local Display = Background.Display
-            local Main = Background.MainCP
-            local Slider = ColorPicker.ColorSlider
-            ColorPicker.ClipsDescendants = true
-            ColorPicker.Name = ColorPickerSettings.Name
-            ColorPicker.Title.Text = ColorPickerSettings.Name
-            ColorPicker.Visible = true
-            ColorPicker.Parent = TabPage
-            ColorPicker.Size = UDim2.new(1,-10,0,45)
-            Background.Size = UDim2.new(0,39,0,22)
-            Display.BackgroundTransparency = 0
-            Main.MainPoint.ImageTransparency = 1
-            ColorPicker.Interact.Size = UDim2.new(1,0,1,0)
-            ColorPicker.Interact.Position = UDim2.new(0.5,0,0.5,0)
-            ColorPicker.RGB.Position = UDim2.new(0,17,0,70)
-            ColorPicker.HexInput.Position = UDim2.new(0,17,0,90)
-            Main.ImageTransparency = 1
-            Background.BackgroundTransparency = 1
-            for _, rgbinput in ipairs(ColorPicker.RGB:GetChildren()) do
-                if rgbinput:IsA("Frame") then
-                    rgbinput.BackgroundColor3 = SelectedTheme.InputBackground
-                    rgbinput.UIStroke.Color = SelectedTheme.InputStroke
-                end
-            end
-            ColorPicker.HexInput.BackgroundColor3 = SelectedTheme.InputBackground
-            ColorPicker.HexInput.UIStroke.Color = SelectedTheme.InputStroke
-            local opened = false 
-            local mouse = Players.LocalPlayer:GetMouse()
-            local mainDragging = false 
-            local sliderDragging = false 
-            ColorPicker.Interact.MouseButton1Down:Connect(function()
-                task.spawn(function()
-                    TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                    TweenService:Create(ColorPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    task.wait(0.2)
-                    TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(ColorPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end)
-                if not opened then
-                    opened = true 
-                    TweenService:Create(Background, TweenInfo.new(0.45, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,18,0,15)}):Play()
-                    task.wait(0.1)
-                    TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1,-10,0,120)}):Play()
-                    TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,173,0,86)}):Play()
-                    TweenService:Create(Display, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-                    TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.289,0,0.5,0)}):Play()
-                    TweenService:Create(ColorPicker.RGB, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), {Position = UDim2.new(0,17,0,40)}):Play()
-                    TweenService:Create(ColorPicker.HexInput, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.new(0,17,0,73)}):Play()
-                    TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0.574,0,1,0)}):Play()
-                    TweenService:Create(Main.MainPoint, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-                    TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = SelectedTheme ~= CustlownLibrary.Theme.Default and 0.25 or 0.1}):Play()
-                    TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-                else
-                    opened = false
-                    TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1,-10,0,45)}):Play()
-                    TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0,39,0,22)}):Play()
-                    TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1,0,1,0)}):Play()
-                    TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.5,0,0.5,0)}):Play()
-                    TweenService:Create(ColorPicker.RGB, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Position = UDim2.new(0,17,0,70)}):Play()
-                    TweenService:Create(ColorPicker.HexInput, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.new(0,17,0,90)}):Play()
-                    TweenService:Create(Display, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-                    TweenService:Create(Main.MainPoint, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-                    TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-                    TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-                end
-            end)
-            local colorPickerInputConnection = UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then mainDragging = false; sliderDragging = false end end)
-            Main.MouseButton1Down:Connect(function() if opened then mainDragging = true end end)
-            Main.MainPoint.MouseButton1Down:Connect(function() if opened then mainDragging = true end end)
-            Slider.MouseButton1Down:Connect(function() sliderDragging = true end)
-            Slider.SliderPoint.MouseButton1Down:Connect(function() sliderDragging = true end)
-            local h,s,v = ColorPickerSettings.Color:ToHSV()
-            local color = Color3.fromHSV(h,s,v) 
-            local hex = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-            ColorPicker.HexInput.InputBox.Text = hex
-            local function setDisplay()
-                Main.MainPoint.Position = UDim2.new(s,-Main.MainPoint.AbsoluteSize.X/2,1-v,-Main.MainPoint.AbsoluteSize.Y/2)
-                Main.MainPoint.ImageColor3 = Color3.fromHSV(h,s,v)
-                Background.BackgroundColor3 = Color3.fromHSV(h,1,1)
-                Display.BackgroundColor3 = Color3.fromHSV(h,s,v)
-                local x = h * Slider.AbsoluteSize.X
-                Slider.SliderPoint.Position = UDim2.new(0,x-Slider.SliderPoint.AbsoluteSize.X/2,0.5,0)
-                Slider.SliderPoint.ImageColor3 = Color3.fromHSV(h,1,1)
-                local color = Color3.fromHSV(h,s,v) 
-                local r,g,b = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-                ColorPicker.RGB.RInput.InputBox.Text = tostring(r)
-                ColorPicker.RGB.GInput.InputBox.Text = tostring(g)
-                ColorPicker.RGB.BInput.InputBox.Text = tostring(b)
-                hex = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-                ColorPicker.HexInput.InputBox.Text = hex
-            end
-            setDisplay()
-            ColorPicker.HexInput.InputBox.FocusLost:Connect(function()
-                if not pcall(function()
-                        local r, g, b = string.match(ColorPicker.HexInput.InputBox.Text, "^#?(%w%w)(%w%w)(%w%w)$")
-                        local rgbColor = Color3.fromRGB(tonumber(r,16),tonumber(g,16),tonumber(b,16))
-                        h,s,v = rgbColor:ToHSV()
-                        hex = ColorPicker.HexInput.InputBox.Text
-                        setDisplay()
-                        ColorPickerSettings.Color = rgbColor
-                    end) then 
-                    ColorPicker.HexInput.InputBox.Text = hex 
-                end
-                pcall(function() ColorPickerSettings.Callback(Color3.fromHSV(h,s,v)) end)
-                local r,g,b = math.floor((h*255)+0.5),math.floor((s*255)+0.5),math.floor((v*255)+0.5)
-                ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-                if not ColorPickerSettings.Ext then SaveConfiguration() end
-            end)
-            local function rgbBoxes(box,toChange)
-                local value = tonumber(box.Text) 
-                local color = Color3.fromHSV(h,s,v) 
-                local oldR,oldG,oldB = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-                local save 
-                if toChange == "R" then save = oldR; oldR = value
-                elseif toChange == "G" then save = oldG; oldG = value
-                else save = oldB; oldB = value end
-                if value then 
-                    value = math.clamp(value,0,255)
-                    h,s,v = Color3.fromRGB(oldR,oldG,oldB):ToHSV()
-                    setDisplay()
-                else 
-                    box.Text = tostring(save)
-                end
-                local r,g,b = math.floor((h*255)+0.5),math.floor((s*255)+0.5),math.floor((v*255)+0.5)
-                ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-                if not ColorPickerSettings.Ext then SaveConfiguration() end
-            end
-            ColorPicker.RGB.RInput.InputBox.FocusLost:Connect(function() rgbBoxes(ColorPicker.RGB.RInput.InputBox,"R"); pcall(function() ColorPickerSettings.Callback(Color3.fromHSV(h,s,v)) end) end)
-            ColorPicker.RGB.GInput.InputBox.FocusLost:Connect(function() rgbBoxes(ColorPicker.RGB.GInput.InputBox,"G"); pcall(function() ColorPickerSettings.Callback(Color3.fromHSV(h,s,v)) end) end)
-            ColorPicker.RGB.BInput.InputBox.FocusLost:Connect(function() rgbBoxes(ColorPicker.RGB.BInput.InputBox,"B"); pcall(function() ColorPickerSettings.Callback(Color3.fromHSV(h,s,v)) end) end)
-            local colorPickerRenderConnection = RunService.RenderStepped:Connect(function()
-                if mainDragging then
-                    local localX = math.clamp(mouse.X-Main.AbsolutePosition.X,0,Main.AbsoluteSize.X)
-                    local localY = math.clamp(mouse.Y-Main.AbsolutePosition.Y,0,Main.AbsoluteSize.Y)
-                    Main.MainPoint.Position = UDim2.new(0,localX-Main.MainPoint.AbsoluteSize.X/2,0,localY-Main.MainPoint.AbsoluteSize.Y/2)
-                    s = localX / Main.AbsoluteSize.X
-                    v = 1 - (localY / Main.AbsoluteSize.Y)
-                    Display.BackgroundColor3 = Color3.fromHSV(h,s,v)
-                    Main.MainPoint.ImageColor3 = Color3.fromHSV(h,s,v)
-                    Background.BackgroundColor3 = Color3.fromHSV(h,1,1)
-                    local color = Color3.fromHSV(h,s,v) 
-                    local r,g,b = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-                    ColorPicker.RGB.RInput.InputBox.Text = tostring(r)
-                    ColorPicker.RGB.GInput.InputBox.Text = tostring(g)
-                    ColorPicker.RGB.BInput.InputBox.Text = tostring(b)
-                    ColorPicker.HexInput.InputBox.Text = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-                    pcall(function() ColorPickerSettings.Callback(Color3.fromHSV(h,s,v)) end)
-                    ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-                    if not ColorPickerSettings.Ext then SaveConfiguration() end
-                end
-                if sliderDragging then 
-                    local localX = math.clamp(mouse.X-Slider.AbsolutePosition.X,0,Slider.AbsoluteSize.X)
-                    h = localX / Slider.AbsoluteSize.X
-                    Display.BackgroundColor3 = Color3.fromHSV(h,s,v)
-                    Slider.SliderPoint.Position = UDim2.new(0,localX-Slider.SliderPoint.AbsoluteSize.X/2,0.5,0)
-                    Slider.SliderPoint.ImageColor3 = Color3.fromHSV(h,1,1)
-                    Background.BackgroundColor3 = Color3.fromHSV(h,1,1)
-                    Main.MainPoint.ImageColor3 = Color3.fromHSV(h,s,v)
-                    local color = Color3.fromHSV(h,s,v) 
-                    local r,g,b = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-                    ColorPicker.RGB.RInput.InputBox.Text = tostring(r)
-                    ColorPicker.RGB.GInput.InputBox.Text = tostring(g)
-                    ColorPicker.RGB.BInput.InputBox.Text = tostring(b)
-                    ColorPicker.HexInput.InputBox.Text = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-                    pcall(function() ColorPickerSettings.Callback(Color3.fromHSV(h,s,v)) end)
-                    ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-                    if not ColorPickerSettings.Ext then SaveConfiguration() end
-                end
-            end)
-            ColorPicker.Destroying:Connect(function() if colorPickerRenderConnection then colorPickerRenderConnection:Disconnect() end; if colorPickerInputConnection then colorPickerInputConnection:Disconnect() end end)
-            if Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled and ColorPickerSettings.Flag then CustlownLibrary.Flags[ColorPickerSettings.Flag] = ColorPickerSettings end
-            function ColorPickerSettings:Set(RGBColor) ColorPickerSettings.Color = RGBColor; h,s,v = ColorPickerSettings.Color:ToHSV(); color = Color3.fromHSV(h,s,v); setDisplay() end
-            ColorPicker.MouseEnter:Connect(function() TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play() end)
-            ColorPicker.MouseLeave:Connect(function() TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play() end)
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                for _, rgbinput in ipairs(ColorPicker.RGB:GetChildren()) do
-                    if rgbinput:IsA("Frame") then
-                        rgbinput.BackgroundColor3 = SelectedTheme.InputBackground
-                        rgbinput.UIStroke.Color = SelectedTheme.InputStroke
-                    end
-                end
-                ColorPicker.HexInput.BackgroundColor3 = SelectedTheme.InputBackground
-                ColorPicker.HexInput.UIStroke.Color = SelectedTheme.InputStroke
-            end)
-            return ColorPickerSettings
-        end
-        function Tab:CreateSection(SectionName)
-            local SectionValue = {}
-            if SDone then
-                local SectionSpace = Elements.Template.SectionSpacing:Clone()
-                SectionSpace.Visible = true
-                SectionSpace.Parent = TabPage
-            end
-            local Section = Elements.Template.SectionTitle:Clone()
-            Section.Title.Text = SectionName
-            Section.Visible = true
-            Section.Parent = TabPage
-            Section.Title.TextTransparency = 1
-            TweenService:Create(Section.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.4}):Play()
-            function SectionValue:Set(NewSection) Section.Title.Text = NewSection end
-            SDone = true
-            return SectionValue
-        end
-        function Tab:CreateDivider()
-            local DividerValue = {}
-            local Divider = Elements.Template.Divider:Clone()
-            Divider.Visible = true
-            Divider.Parent = TabPage
-            Divider.Divider.BackgroundTransparency = 1
-            TweenService:Create(Divider.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.85}):Play()
-            function DividerValue:Set(Value) Divider.Visible = Value end
-            return DividerValue
-        end
-        function Tab:CreateLabel(LabelText, Icon, Color, IgnoreTheme)
-            local LabelValue = {}
-            local Label = Elements.Template.Label:Clone()
-            Label.Title.Text = LabelText
-            Label.Visible = true
-            Label.Parent = TabPage
-            Label.BackgroundColor3 = Color or SelectedTheme.SecondaryElementBackground
-            Label.UIStroke.Color = Color or SelectedTheme.SecondaryElementStroke
-            if Icon then
-                local img, rectOffset, rectSize = resolveIcon(Icon)
-                Label.Icon.Image = img
-                if rectOffset then Label.Icon.ImageRectOffset = rectOffset end
-                if rectSize then Label.Icon.ImageRectSize = rectSize end
-            else
-                Label.Icon.Image = ""
-            end
-            if Icon and Label:FindFirstChild('Icon') then
-                Label.Title.Position = UDim2.new(0,45,0.5,0)
-                Label.Title.Size = UDim2.new(1,-100,0,14)
-                Label.Icon.Visible = true
-            end
-            Label.Icon.ImageTransparency = 1
-            Label.BackgroundTransparency = 1
-            Label.UIStroke.Transparency = 1
-            Label.Title.TextTransparency = 1
-            Label:SetAttribute("BackgroundTransparencyTarget", Color and 0.8 or 0)
-            Label:SetAttribute("UIStrokeTransparencyTarget", Color and 0.7 or 0)
-            Label:SetAttribute("TitleTextTransparencyTarget", Color and 0.2 or 0)
-            TweenService:Create(Label, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = Color and 0.8 or 0}):Play()
-            TweenService:Create(Label.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = Color and 0.7 or 0}):Play()
-            TweenService:Create(Label.Icon, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-            TweenService:Create(Label.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = Color and 0.2 or 0}):Play()
-            function LabelValue:Set(NewLabel, NewIcon, NewColor)
-                Label.Title.Text = NewLabel
-                if NewColor then
-                    Label.BackgroundColor3 = NewColor or SelectedTheme.SecondaryElementBackground
-                    Label.UIStroke.Color = NewColor or SelectedTheme.SecondaryElementStroke
-                end
-                if NewIcon and Label:FindFirstChild('Icon') then
-                    Label.Title.Position = UDim2.new(0,45,0.5,0)
-                    Label.Title.Size = UDim2.new(1,-100,0,14)
-                    local img, rectOffset, rectSize = resolveIcon(NewIcon)
-                    Label.Icon.Image = img
-                    if rectOffset then Label.Icon.ImageRectOffset = rectOffset end
-                    if rectSize then Label.Icon.ImageRectSize = rectSize end
-                    Label.Icon.Visible = true
-                end
-            end
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                Label.BackgroundColor3 = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementBackground
-                Label.UIStroke.Color = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementStroke
-            end)
-            return LabelValue
-        end
-        function Tab:CreateParagraph(ParagraphSettings)
-            local ParagraphValue = {}
-            local Paragraph = Elements.Template.Paragraph:Clone()
-            Paragraph.Title.Text = ParagraphSettings.Title
-            Paragraph.Content.Text = ParagraphSettings.Content
-            Paragraph.Visible = true
-            Paragraph.Parent = TabPage
-            Paragraph.BackgroundTransparency = 1
-            Paragraph.UIStroke.Transparency = 1
-            Paragraph.Title.TextTransparency = 1
-            Paragraph.Content.TextTransparency = 1
-            Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
-            Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-            TweenService:Create(Paragraph, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(Paragraph.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-            TweenService:Create(Paragraph.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            TweenService:Create(Paragraph.Content, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            function ParagraphValue:Set(NewParagraphSettings) Paragraph.Title.Text = NewParagraphSettings.Title; Paragraph.Content.Text = NewParagraphSettings.Content end
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
-                Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-            end)
-            return ParagraphValue
-        end
-        function Tab:CreateInput(InputSettings)
-            local Input = Elements.Template.Input:Clone()
-            Input.Name = InputSettings.Name
-            Input.Title.Text = InputSettings.Name
-            Input.Visible = true
-            Input.Parent = TabPage
-            Input.BackgroundTransparency = 1
-            Input.UIStroke.Transparency = 1
-            Input.Title.TextTransparency = 1
-            Input.InputFrame.InputBox.Text = InputSettings.CurrentValue or ''
-            Input.InputFrame.BackgroundColor3 = SelectedTheme.InputBackground
-            Input.InputFrame.UIStroke.Color = SelectedTheme.InputStroke
-            TweenService:Create(Input, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(Input.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-            TweenService:Create(Input.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            Input.InputFrame.InputBox.PlaceholderText = InputSettings.PlaceholderText
-            Input.InputFrame.Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, 30)
-            Input.InputFrame.InputBox.FocusLost:Connect(function()
-                local Success, Response = pcall(function()
-                    InputSettings.Callback(Input.InputFrame.InputBox.Text)
-                    InputSettings.CurrentValue = Input.InputFrame.InputBox.Text
-                end)
-                if not Success then
-                    TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                    TweenService:Create(Input.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    Input.Title.Text = "Callback Error"
-                    print("Custlown | "..InputSettings.Name.." Callback Error " ..tostring(Response))
-                    task.wait(0.5)
-                    Input.Title.Text = InputSettings.Name
-                    TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Input.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-                if InputSettings.RemoveTextAfterFocusLost then Input.InputFrame.InputBox.Text = "" end
-                if not InputSettings.Ext then SaveConfiguration() end
-            end)
-            Input.MouseEnter:Connect(function() TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play() end)
-            Input.MouseLeave:Connect(function() TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play() end)
-            Input.InputFrame.InputBox:GetPropertyChangedSignal("Text"):Connect(function()
-                TweenService:Create(Input.InputFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, 30)}):Play()
-            end)
-            function InputSettings:Set(text)
-                Input.InputFrame.InputBox.Text = text
-                InputSettings.CurrentValue = text
-                local Success, Response = pcall(function() InputSettings.Callback(text) end)
-                if not InputSettings.Ext then SaveConfiguration() end
-            end
-            if Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled and InputSettings.Flag then CustlownLibrary.Flags[InputSettings.Flag] = InputSettings end
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                Input.InputFrame.BackgroundColor3 = SelectedTheme.InputBackground
-                Input.InputFrame.UIStroke.Color = SelectedTheme.InputStroke
-            end)
-            return InputSettings
-        end
-        function Tab:CreateDropdown(DropdownSettings)
-            local Dropdown = Elements.Template.Dropdown:Clone()
-            if string.find(DropdownSettings.Name,"closed") then Dropdown.Name = "Dropdown"
-            else Dropdown.Name = DropdownSettings.Name end
-            Dropdown.Title.Text = DropdownSettings.Name
-            Dropdown.Visible = true
-            Dropdown.Parent = TabPage
-            Dropdown.List.Visible = false
-            if DropdownSettings.CurrentOption then
-                if type(DropdownSettings.CurrentOption) == "string" then DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption} end
-                if not DropdownSettings.MultipleOptions and type(DropdownSettings.CurrentOption) == "table" then DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption[1]} end
-            else DropdownSettings.CurrentOption = {} end
-            if DropdownSettings.MultipleOptions then
-                if DropdownSettings.CurrentOption and type(DropdownSettings.CurrentOption) == "table" then
-                    if #DropdownSettings.CurrentOption == 1 then Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-                    elseif #DropdownSettings.CurrentOption == 0 then Dropdown.Selected.Text = "None"
-                    else Dropdown.Selected.Text = "Various" end
-                else DropdownSettings.CurrentOption = {}; Dropdown.Selected.Text = "None" end
-            else Dropdown.Selected.Text = DropdownSettings.CurrentOption[1] or "None" end
-            Dropdown.Toggle.ImageColor3 = SelectedTheme.TextColor
-            TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-            Dropdown.BackgroundTransparency = 1
-            Dropdown.UIStroke.Transparency = 1
-            Dropdown.Title.TextTransparency = 1
-            Dropdown.Size = UDim2.new(1,-10,0,45)
-            TweenService:Create(Dropdown, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-            TweenService:Create(Dropdown.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            for _, ununusedoption in ipairs(Dropdown.List:GetChildren()) do
-                if ununusedoption.ClassName == "Frame" and ununusedoption.Name ~= "Placeholder" then ununusedoption:Destroy() end
-            end
-            Dropdown.Toggle.Rotation = 180
-            Dropdown.Interact.MouseButton1Click:Connect(function()
-                TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                task.wait(0.1)
-                TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                if Debounce then return end
-                if Dropdown.List.Visible then
-                    Debounce = true
-                    TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1,-10,0,45)}):Play()
-                    for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-                        if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-                            TweenService:Create(DropdownOpt, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-                            TweenService:Create(DropdownOpt.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                            TweenService:Create(DropdownOpt.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-                        end
-                    end
-                    TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 1}):Play()
-                    TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()
-                    task.wait(0.35)
-                    Dropdown.List.Visible = false
-                    Debounce = false
-                else
-                    TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1,-10,0,180)}):Play()
-                    Dropdown.List.Visible = true
-                    TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 0.7}):Play()
-                    TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 0}):Play()
-                    for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-                        if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-                            if DropdownOpt.Name ~= Dropdown.Selected.Text then TweenService:Create(DropdownOpt.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0}):Play() end
-                            TweenService:Create(DropdownOpt, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-                            TweenService:Create(DropdownOpt.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-                        end
-                    end
-                end
-            end)
-            Dropdown.MouseEnter:Connect(function()
-                if not Dropdown.List.Visible then TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play() end
-            end)
-            Dropdown.MouseLeave:Connect(function()
-                TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-            end)
-            local function SetDropdownOptions()
-                for _, Option in ipairs(DropdownSettings.Options) do
-                    local DropdownOption = Elements.Template.Dropdown.List.Template:Clone()
-                    DropdownOption.Name = Option
-                    DropdownOption.Title.Text = Option
-                    DropdownOption.Parent = Dropdown.List
-                    DropdownOption.Visible = true
-                    DropdownOption.BackgroundTransparency = 1
-                    DropdownOption.UIStroke.Transparency = 1
-                    DropdownOption.Title.TextTransparency = 1
-                    DropdownOption.Interact.ZIndex = 50
-                    DropdownOption.Interact.MouseButton1Click:Connect(function()
-                        if not DropdownSettings.MultipleOptions and table.find(DropdownSettings.CurrentOption, Option) then return end
-                        if table.find(DropdownSettings.CurrentOption, Option) then
-                            table.remove(DropdownSettings.CurrentOption, table.find(DropdownSettings.CurrentOption, Option))
-                            if DropdownSettings.MultipleOptions then
-                                if #DropdownSettings.CurrentOption == 1 then Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-                                elseif #DropdownSettings.CurrentOption == 0 then Dropdown.Selected.Text = "None"
-                                else Dropdown.Selected.Text = "Various" end
-                            else Dropdown.Selected.Text = DropdownSettings.CurrentOption[1] end
-                        else
-                            if not DropdownSettings.MultipleOptions then table.clear(DropdownSettings.CurrentOption) end
-                            table.insert(DropdownSettings.CurrentOption, Option)
-                            if DropdownSettings.MultipleOptions then
-                                if #DropdownSettings.CurrentOption == 1 then Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-                                elseif #DropdownSettings.CurrentOption == 0 then Dropdown.Selected.Text = "None"
-                                else Dropdown.Selected.Text = "Various" end
-                            else Dropdown.Selected.Text = DropdownSettings.CurrentOption[1] end
-                            TweenService:Create(DropdownOption.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                            TweenService:Create(DropdownOption, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.DropdownSelected}):Play()
-                            Debounce = true
-                        end
-                        local Success, Response = pcall(function() DropdownSettings.Callback(DropdownSettings.CurrentOption) end)
-                        if not Success then
-                            TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                            TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                            Dropdown.Title.Text = "Callback Error"
-                            print("Custlown | "..DropdownSettings.Name.." Callback Error " ..tostring(Response))
-                            task.wait(0.5)
-                            Dropdown.Title.Text = DropdownSettings.Name
-                            TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                            TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                        end
-                        for _, droption in ipairs(Dropdown.List:GetChildren()) do
-                            if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" and not table.find(DropdownSettings.CurrentOption, droption.Name) then
-                                TweenService:Create(droption, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.DropdownUnselected}):Play()
-                            end
-                        end
-                        if not DropdownSettings.MultipleOptions then
-                            task.wait(0.1)
-                            TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1,-10,0,45)}):Play()
-                            for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-                                if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-                                    TweenService:Create(DropdownOpt, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-                                    TweenService:Create(DropdownOpt.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                                    TweenService:Create(DropdownOpt.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-                                end
-                            end
-                            TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 1}):Play()
-                            TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()
-                            task.wait(0.35)
-                            Dropdown.List.Visible = false
-                        end
-                        Debounce = false
-                        if not DropdownSettings.Ext then SaveConfiguration() end
-                    end)
-                    CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function() DropdownOption.UIStroke.Color = SelectedTheme.ElementStroke end)
-                end
-            end
-            SetDropdownOptions()
-            for _, droption in ipairs(Dropdown.List:GetChildren()) do
-                if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
-                    if not table.find(DropdownSettings.CurrentOption, droption.Name) then droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-                    else droption.BackgroundColor3 = SelectedTheme.DropdownSelected end
-                    CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                        if not table.find(DropdownSettings.CurrentOption, droption.Name) then droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-                        else droption.BackgroundColor3 = SelectedTheme.DropdownSelected end
-                    end)
-                end
-            end
-            function DropdownSettings:Set(NewOption)
-                DropdownSettings.CurrentOption = NewOption
-                if typeof(DropdownSettings.CurrentOption) == "string" then DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption} end
-                if not DropdownSettings.MultipleOptions then DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption[1]} end
-                if DropdownSettings.MultipleOptions then
-                    if #DropdownSettings.CurrentOption == 1 then Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-                    elseif #DropdownSettings.CurrentOption == 0 then Dropdown.Selected.Text = "None"
-                    else Dropdown.Selected.Text = "Various" end
-                else Dropdown.Selected.Text = DropdownSettings.CurrentOption[1] end
-                local Success, Response = pcall(function() DropdownSettings.Callback(NewOption) end)
-                if not Success then
-                    TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                    TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    Dropdown.Title.Text = "Callback Error"
-                    print("Custlown | "..DropdownSettings.Name.." Callback Error " ..tostring(Response))
-                    task.wait(0.5)
-                    Dropdown.Title.Text = DropdownSettings.Name
-                    TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-                for _, droption in ipairs(Dropdown.List:GetChildren()) do
-                    if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
-                        if not table.find(DropdownSettings.CurrentOption, droption.Name) then droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-                        else droption.BackgroundColor3 = SelectedTheme.DropdownSelected end
-                    end
-                end
-            end
-            function DropdownSettings:Refresh(optionsTable)
-                DropdownSettings.Options = optionsTable
-                for _, option in Dropdown.List:GetChildren() do
-                    if option.ClassName == "Frame" and option.Name ~= "Placeholder" then option:Destroy() end
-                end
-                SetDropdownOptions()
-                for _, droption in ipairs(Dropdown.List:GetChildren()) do
-                    if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
-                        if not table.find(DropdownSettings.CurrentOption, droption.Name) then droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-                        else droption.BackgroundColor3 = SelectedTheme.DropdownSelected end
-                    end
-                end
-                if Dropdown.List.Visible then
-                    for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-                        if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-                            DropdownOpt.BackgroundTransparency = 0
-                            DropdownOpt.Title.TextTransparency = 0
-                            if not table.find(DropdownSettings.CurrentOption, DropdownOpt.Name) then DropdownOpt.UIStroke.Transparency = 0 end
-                        end
-                    end
-                end
-            end
-            if Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled and DropdownSettings.Flag then CustlownLibrary.Flags[DropdownSettings.Flag] = DropdownSettings end
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                Dropdown.Toggle.ImageColor3 = SelectedTheme.TextColor
-                TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-            end)
-            return DropdownSettings
-        end
-        function Tab:CreateKeybind(KeybindSettings)
-            local CheckingForKey = false
-            local Keybind = Elements.Template.Keybind:Clone()
-            Keybind.Name = KeybindSettings.Name
-            Keybind.Title.Text = KeybindSettings.Name
-            Keybind.Visible = true
-            Keybind.Parent = TabPage
-            Keybind.BackgroundTransparency = 1
-            Keybind.UIStroke.Transparency = 1
-            Keybind.Title.TextTransparency = 1
-            Keybind.KeybindFrame.BackgroundColor3 = SelectedTheme.InputBackground
-            Keybind.KeybindFrame.UIStroke.Color = SelectedTheme.InputStroke
-            TweenService:Create(Keybind, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-            TweenService:Create(Keybind.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            Keybind.KeybindFrame.KeybindBox.Text = KeybindSettings.CurrentKeybind
-            Keybind.KeybindFrame.Size = UDim2.new(0, Keybind.KeybindFrame.KeybindBox.TextBounds.X + 24, 0, 30)
-            Keybind.KeybindFrame.KeybindBox.Focused:Connect(function()
-                CheckingForKey = true
-                Keybind.KeybindFrame.KeybindBox.Text = ""
-            end)
-            Keybind.KeybindFrame.KeybindBox.FocusLost:Connect(function()
-                CheckingForKey = false
-                if Keybind.KeybindFrame.KeybindBox.Text == nil or Keybind.KeybindFrame.KeybindBox.Text == "" then
-                    Keybind.KeybindFrame.KeybindBox.Text = KeybindSettings.CurrentKeybind
-                    if not KeybindSettings.Ext then SaveConfiguration() end
-                end
-            end)
-            Keybind.MouseEnter:Connect(function() TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play() end)
-            Keybind.MouseLeave:Connect(function() TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play() end)
-            local connection = UserInputService.InputBegan:Connect(function(input, processed)
-                if CheckingForKey then
-                    if input.KeyCode ~= Enum.KeyCode.Unknown then
-                        local NewKey = tostring(input.KeyCode):match("%.(.+)")
-                        Keybind.KeybindFrame.KeybindBox.Text = NewKey
-                        KeybindSettings.CurrentKeybind = NewKey
-                        Keybind.KeybindFrame.KeybindBox:ReleaseFocus()
-                        if not KeybindSettings.Ext then SaveConfiguration() end
-                        if KeybindSettings.CallOnChange then KeybindSettings.Callback(NewKey) end
-                    end
-                elseif not KeybindSettings.CallOnChange and KeybindSettings.CurrentKeybind ~= nil and (input.KeyCode == Enum.KeyCode[KeybindSettings.CurrentKeybind] and not processed) then
-                    local Held = true
-                    local Connection
-                    Connection = input.Changed:Connect(function(prop)
-                        if prop == "UserInputState" then Connection:Disconnect(); Held = false end
-                    end)
-                    if not KeybindSettings.HoldToInteract then
-                        local Success, Response = pcall(KeybindSettings.Callback)
-                        if not Success then
-                            TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                            TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                            Keybind.Title.Text = "Callback Error"
-                            print("Custlown | "..KeybindSettings.Name.." Callback Error " ..tostring(Response))
-                            task.wait(0.5)
-                            Keybind.Title.Text = KeybindSettings.Name
-                            TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                            TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                        end
-                    else
-                        task.wait(0.25)
-                        if Held then
-                            local Loop; Loop = RunService.Stepped:Connect(function()
-                                if not Held then pcall(function() KeybindSettings.Callback(false) end); Loop:Disconnect()
-                                else pcall(function() KeybindSettings.Callback(true) end) end
-                            end)
-                        end
-                    end
-                end
-            end)
-            table.insert(keybindConnections, connection)
-            Keybind.KeybindFrame.KeybindBox:GetPropertyChangedSignal("Text"):Connect(function()
-                TweenService:Create(Keybind.KeybindFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Keybind.KeybindFrame.KeybindBox.TextBounds.X + 24, 0, 30)}):Play()
-            end)
-            function KeybindSettings:Set(NewKeybind)
-                Keybind.KeybindFrame.KeybindBox.Text = tostring(NewKeybind)
-                KeybindSettings.CurrentKeybind = tostring(NewKeybind)
-                Keybind.KeybindFrame.KeybindBox:ReleaseFocus()
-                if not KeybindSettings.Ext then SaveConfiguration() end
-                if KeybindSettings.CallOnChange then KeybindSettings.Callback(tostring(NewKeybind)) end
-            end
-            if Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled and KeybindSettings.Flag then CustlownLibrary.Flags[KeybindSettings.Flag] = KeybindSettings end
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                Keybind.KeybindFrame.BackgroundColor3 = SelectedTheme.InputBackground
-                Keybind.KeybindFrame.UIStroke.Color = SelectedTheme.InputStroke
-            end)
-            return KeybindSettings
-        end
-        function Tab:CreateToggle(ToggleSettings)
-            local ToggleValue = {}
-            local Toggle = Elements.Template.Toggle:Clone()
-            Toggle.Name = ToggleSettings.Name
-            Toggle.Title.Text = ToggleSettings.Name
-            Toggle.Visible = true
-            Toggle.Parent = TabPage
-            Toggle.BackgroundTransparency = 1
-            Toggle.UIStroke.Transparency = 1
-            Toggle.Title.TextTransparency = 1
-            Toggle.Switch.BackgroundColor3 = SelectedTheme.ToggleBackground
-            if SelectedTheme ~= CustlownLibrary.Theme.Default then Toggle.Switch.Shadow.Visible = false end
-            TweenService:Create(Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-            TweenService:Create(Toggle.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            if ToggleSettings.CurrentValue == true then
-                Toggle.Switch.Indicator.Position = UDim2.new(1,-20,0.5,0)
-                Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleEnabledStroke
-                Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleEnabled
-                Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleEnabledOuterStroke
-            else
-                Toggle.Switch.Indicator.Position = UDim2.new(1,-40,0.5,0)
-                Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
-                Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
-                Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
-            end
-            Toggle.MouseEnter:Connect(function() TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play() end)
-            Toggle.MouseLeave:Connect(function() TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play() end)
-            Toggle.Interact.MouseButton1Click:Connect(function()
-                if ToggleSettings.CurrentValue == true then
-                    ToggleSettings.CurrentValue = false
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1,-40,0.5,0)}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledStroke}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleDisabled}):Play()
-                    TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledOuterStroke}):Play()
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                else
-                    ToggleSettings.CurrentValue = true
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1,-20,0.5,0)}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledStroke}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleEnabled}):Play()
-                    TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledOuterStroke}):Play()
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-                local Success, Response = pcall(function() ToggleSettings.Callback(ToggleSettings.CurrentValue) end)
-                if not Success then
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    Toggle.Title.Text = "Callback Error"
-                    print("Custlown | "..ToggleSettings.Name.." Callback Error " ..tostring(Response))
-                    task.wait(0.5)
-                    Toggle.Title.Text = ToggleSettings.Name
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-                if not ToggleSettings.Ext then SaveConfiguration() end
-            end)
-            function ToggleSettings:Set(NewToggleValue)
-                if NewToggleValue == true then
-                    ToggleSettings.CurrentValue = true
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1,-20,0.5,0)}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,12,0,12)}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledStroke}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleEnabled}):Play()
-                    TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledOuterStroke}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,17,0,17)}):Play()
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                else
-                    ToggleSettings.CurrentValue = false
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1,-40,0.5,0)}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,12,0,12)}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledStroke}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleDisabled}):Play()
-                    TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledOuterStroke}):Play()
-                    TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,17,0,17)}):Play()
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-                local Success, Response = pcall(function() ToggleSettings.Callback(ToggleSettings.CurrentValue) end)
-                if not Success then
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    Toggle.Title.Text = "Callback Error"
-                    print("Custlown | "..ToggleSettings.Name.." Callback Error " ..tostring(Response))
-                    task.wait(0.5)
-                    Toggle.Title.Text = ToggleSettings.Name
-                    TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-                if not ToggleSettings.Ext then SaveConfiguration() end
-            end
-            if not ToggleSettings.Ext and Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled and ToggleSettings.Flag then CustlownLibrary.Flags[ToggleSettings.Flag] = ToggleSettings end
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                Toggle.Switch.BackgroundColor3 = SelectedTheme.ToggleBackground
-                if SelectedTheme ~= CustlownLibrary.Theme.Default then Toggle.Switch.Shadow.Visible = false end
-                task.wait()
-                if not ToggleSettings.CurrentValue then
-                    Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
-                    Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
-                    Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
-                else
-                    Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleEnabledStroke
-                    Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleEnabled
-                    Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleEnabledOuterStroke
-                end
-            end)
-            return ToggleSettings
-        end
-        function Tab:CreateSlider(SliderSettings)
-            local SLDragging = false
-            local Slider = Elements.Template.Slider:Clone()
-            Slider.Name = SliderSettings.Name
-            Slider.Title.Text = SliderSettings.Name
-            Slider.Visible = true
-            Slider.Parent = TabPage
-            Slider.BackgroundTransparency = 1
-            Slider.UIStroke.Transparency = 1
-            Slider.Title.TextTransparency = 1
-            if SelectedTheme ~= CustlownLibrary.Theme.Default then Slider.Main.Shadow.Visible = false end
-            Slider.Main.BackgroundColor3 = SelectedTheme.SliderBackground
-            Slider.Main.UIStroke.Color = SelectedTheme.SliderStroke
-            Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
-            Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
-            TweenService:Create(Slider, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(Slider.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-            TweenService:Create(Slider.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-            local percent = (SliderSettings.CurrentValue - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])
-            Slider.Main.Progress.Size = UDim2.new(percent, 0, 1, 0)
-            if not SliderSettings.Suffix then Slider.Main.Information.Text = tostring(SliderSettings.CurrentValue)
-            else Slider.Main.Information.Text = tostring(SliderSettings.CurrentValue) .. " " .. SliderSettings.Suffix end
-            Slider.MouseEnter:Connect(function() TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play() end)
-            Slider.MouseLeave:Connect(function() TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play() end)
-            Slider.Main.Interact.InputBegan:Connect(function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then 
-                    TweenService:Create(Slider.Main.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    TweenService:Create(Slider.Main.Progress.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    SLDragging = true 
-                end 
-            end)
-            Slider.Main.Interact.InputEnded:Connect(function(Input) 
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then 
-                    TweenService:Create(Slider.Main.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0.4}):Play()
-                    TweenService:Create(Slider.Main.Progress.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0.3}):Play()
-                    SLDragging = false 
-                end 
-            end)
-            Slider.Main.Interact.MouseButton1Down:Connect(function(X)
-                local Current = Slider.Main.Progress.AbsolutePosition.X + Slider.Main.Progress.AbsoluteSize.X
-                local Start = Current
-                local Location = X
-                local Loop; Loop = RunService.Stepped:Connect(function()
-                    if SLDragging then
-                        Location = UserInputService:GetMouseLocation().X
-                        Current = Current + 0.025 * (Location - Start)
-                        if Location < Slider.Main.AbsolutePosition.X then Location = Slider.Main.AbsolutePosition.X
-                        elseif Location > Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X then Location = Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X end
-                        if Current < Slider.Main.AbsolutePosition.X + 5 then Current = Slider.Main.AbsolutePosition.X + 5
-                        elseif Current > Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X then Current = Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X end
-                        if Current <= Location and (Location - Start) < 0 then Start = Location
-                        elseif Current >= Location and (Location - Start) > 0 then Start = Location end
-                        TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.45, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Current - Slider.Main.AbsolutePosition.X, 1, 0)}):Play()
-                        local NewValue = SliderSettings.Range[1] + (Location - Slider.Main.AbsolutePosition.X) / Slider.Main.AbsoluteSize.X * (SliderSettings.Range[2] - SliderSettings.Range[1])
-                        NewValue = math.floor(NewValue / SliderSettings.Increment + 0.5) * (SliderSettings.Increment * 10000000) / 10000000
-                        NewValue = math.clamp(NewValue, SliderSettings.Range[1], SliderSettings.Range[2])
-                        if not SliderSettings.Suffix then Slider.Main.Information.Text = tostring(NewValue)
-                        else Slider.Main.Information.Text = tostring(NewValue) .. " " .. SliderSettings.Suffix end
-                        if SliderSettings.CurrentValue ~= NewValue then
-                            local Success, Response = pcall(function() SliderSettings.Callback(NewValue) end)
-                            if not Success then
-                                TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                                TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                                Slider.Title.Text = "Callback Error"
-                                print("Custlown | "..SliderSettings.Name.." Callback Error " ..tostring(Response))
-                                task.wait(0.5)
-                                Slider.Title.Text = SliderSettings.Name
-                                TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                                TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                            end
-                            SliderSettings.CurrentValue = NewValue
-                            if not SliderSettings.Ext then SaveConfiguration() end
-                        end
-                    else
-                        TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.3, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Location - Slider.Main.AbsolutePosition.X > 5 and Location - Slider.Main.AbsolutePosition.X or 5, 1, 0)}):Play()
-                        Loop:Disconnect()
-                    end
-                end)
-            end)
-            function SliderSettings:Set(NewVal)
-                NewVal = math.clamp(NewVal, SliderSettings.Range[1], SliderSettings.Range[2])
-                local newPercent = (NewVal - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])
-                TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.45, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(newPercent, 0, 1, 0)}):Play()
-                Slider.Main.Information.Text = tostring(NewVal) .. " " .. (SliderSettings.Suffix or "")
-                local Success, Response = pcall(function() SliderSettings.Callback(NewVal) end)
-                if not Success then
-                    TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85,0,0)}):Play()
-                    TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-                    Slider.Title.Text = "Callback Error"
-                    print("Custlown | "..SliderSettings.Name.." Callback Error " ..tostring(Response))
-                    task.wait(0.5)
-                    Slider.Title.Text = SliderSettings.Name
-                    TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-                    TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-                end
-                SliderSettings.CurrentValue = NewVal
-                if not SliderSettings.Ext then SaveConfiguration() end
-            end
-            if Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled and SliderSettings.Flag then CustlownLibrary.Flags[SliderSettings.Flag] = SliderSettings end
-            CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-                if SelectedTheme ~= CustlownLibrary.Theme.Default then Slider.Main.Shadow.Visible = false end
-                Slider.Main.BackgroundColor3 = SelectedTheme.SliderBackground
-                Slider.Main.UIStroke.Color = SelectedTheme.SliderStroke
-                Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
-                Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
-            end)
-            return SliderSettings
-        end
-        CustlownUI.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-            TabButton.UIStroke.Color = SelectedTheme.TabStroke
-            if Elements.UIPageLayout.CurrentPage == TabPage then
-                TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-                TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-                TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-            else
-                TabButton.BackgroundColor3 = SelectedTheme.TabBackground
-                TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
-                TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
-            end
-        end)
-        return Tab
-    end
-    Elements.Visible = true
-    task.wait(1.1)
-    TweenService:Create(Main, TweenInfo.new(0.7, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0,390,0,90)}):Play()
-    task.wait(0.3)
-    TweenService:Create(LoadingFrame.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-    TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-    TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-    task.wait(0.1)
-    TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = useMobileSizing and UDim2.new(0,500,0,275) or UDim2.new(0,500,0,475)}):Play()
-    TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-    Topbar.BackgroundTransparency = 1
-    Topbar.Divider.Size = UDim2.new(0,0,0,1)
-    Topbar.Divider.BackgroundColor3 = SelectedTheme.ElementStroke
-    Topbar.CornerRepair.BackgroundTransparency = 1
-    Topbar.Title.TextTransparency = 1
-    Topbar.Search.ImageTransparency = 1
-    if Topbar:FindFirstChild('Settings') then Topbar.Settings.ImageTransparency = 1 end
-    Topbar.ChangeSize.ImageTransparency = 1
-    Topbar.Hide.ImageTransparency = 1
-    task.wait(0.5)
-    Topbar.Visible = true
-    TweenService:Create(Topbar, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-    task.wait(0.1)
-    TweenService:Create(Topbar.Divider, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1,0,0,1)}):Play()
-    TweenService:Create(Topbar.Title, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-    task.wait(0.05)
-    TweenService:Create(Topbar.Search, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-    task.wait(0.05)
-    if Topbar:FindFirstChild('Settings') then TweenService:Create(Topbar.Settings, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play(); task.wait(0.05) end
-    TweenService:Create(Topbar.ChangeSize, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-    task.wait(0.05)
-    TweenService:Create(Topbar.Hide, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-    task.wait(0.3)
-    if dragBar then TweenService:Create(dragBarCosmetic, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play() end
-    function Window.ModifyTheme(NewTheme)
-        local success = pcall(ChangeTheme, NewTheme)
-        if not success then CustlownLibrary:Notify({Title = 'Theme Error', Content = 'Theme not found', Duration = 5})
-        else CustlownLibrary:Notify({Title = 'Theme Changed', Content = typeof(NewTheme) == 'string' and NewTheme or 'Custom Theme', Duration = 3}) end
-    end
-    pcall(function() createSettings(Window) end)
-    return Window
-end
-
-local hideHotkeyConnection
-function CustlownLibrary:Destroy()
-    custlownDestroyed = true
-    if hideHotkeyConnection then hideHotkeyConnection:Disconnect() end
-    for _, connection in keybindConnections do connection:Disconnect() end
-    CustlownUI:Destroy()
-end
-
-Topbar.ChangeSize.MouseButton1Click:Connect(function()
-    if Debounce then return end
-    if Minimised then Minimised = false; Maximise()
-    else Minimised = true; Minimise() end
-end)
-
-Main.Search.Input:GetPropertyChangedSignal('Text'):Connect(function()
-    if #Main.Search.Input.Text > 0 then
-        if not Elements.UIPageLayout.CurrentPage:FindFirstChild('SearchTitle') then 
-            local searchTitle = Elements.Template.SectionTitle:Clone()
-            searchTitle.Parent = Elements.UIPageLayout.CurrentPage
-            searchTitle.Name = 'SearchTitle'
-            searchTitle.LayoutOrder = -100
-            searchTitle.Title.Text = "Results from '"..Elements.UIPageLayout.CurrentPage.Name.."'"
-            searchTitle.Visible = true
-        end
-    else
-        local searchTitle = Elements.UIPageLayout.CurrentPage:FindFirstChild('SearchTitle')
-        if searchTitle then searchTitle:Destroy() end
-    end
-    for _, element in ipairs(Elements.UIPageLayout.CurrentPage:GetChildren()) do
-        if element.ClassName ~= 'UIListLayout' and element.Name ~= 'Placeholder' and element.Name ~= 'SearchTitle' then
-            if element.Name == 'SectionTitle' then element.Visible = #Main.Search.Input.Text == 0
-            else element.Visible = string.lower(element.Name):find(string.lower(Main.Search.Input.Text), 1, true) ~= nil end
-        end
-    end
-end)
-
-Main.Search.Input.FocusLost:Connect(function(enterPressed)
-    if #Main.Search.Input.Text == 0 and searchOpen then task.wait(0.12); closeSearch() end
-end)
-
-Topbar.Search.MouseButton1Click:Connect(function()
-    task.spawn(function() if searchOpen then closeSearch() else openSearch() end end)
-end)
-
-if Topbar:FindFirstChild('Settings') then
-    Topbar.Settings.MouseButton1Click:Connect(function()
-        task.spawn(function()
-            for _, OtherTabButton in ipairs(TabList:GetChildren()) do
-                if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton.Name ~= "Placeholder" then
-                    TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
-                    TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
-                    TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
-                    TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-                    TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-                    TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-                    TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-                end
-            end
-            Elements.UIPageLayout:JumpTo(Elements['Custlown Settings'])
-        end)
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundTransparency = 0.5}):Play()
     end)
+    
+    return btn
 end
 
-Topbar.Hide.MouseButton1Click:Connect(function() setVisibility(Hidden, not useMobileSizing) end)
-
-local function setVisibility(visibility, notify)
-    if Debounce then return end
-    if visibility then Hidden = false; Unhide()
-    else Hidden = true; Hide(notify) end
-end
-
-function CustlownLibrary:SetVisibility(visibility) setVisibility(visibility, false) end
-function CustlownLibrary:IsVisible() return not Hidden end
-
-hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
-    if input.KeyCode == Enum.KeyCode[getSetting("General", "custlownOpen")] and not processed then
-        if Debounce then return end
-        if Hidden then Hidden = false; Unhide()
-        else Hidden = true; Hide() end
-    end
-end)
-
-if MPrompt then
-    MPrompt.Interact.MouseButton1Click:Connect(function()
-        if Debounce then return end
-        if Hidden then Hidden = false; Unhide() end
+function Custlown:CreateToggle(parent, text, defaultValue, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 48)
+    frame.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    frame.BackgroundTransparency = 0.5
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.Position = UDim2.new(0, 15, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Custlown.CurrentTheme.TextColor
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(0, 60, 0, 30)
+    toggleBtn.Position = UDim2.new(1, -75, 0.5, -15)
+    toggleBtn.BackgroundColor3 = defaultValue and Custlown.CurrentTheme.ToggleActive or Custlown.CurrentTheme.ToggleBg
+    toggleBtn.Text = defaultValue and "ON" or "OFF"
+    toggleBtn.TextColor3 = Custlown.CurrentTheme.TextColor
+    toggleBtn.TextSize = 12
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.Parent = frame
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(0, 6)
+    toggleCorner.Parent = toggleBtn
+    
+    local state = defaultValue
+    toggleBtn.MouseButton1Click:Connect(function()
+        state = not state
+        TweenService:Create(toggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = state and Custlown.CurrentTheme.ToggleActive or Custlown.CurrentTheme.ToggleBg}):Play()
+        toggleBtn.Text = state and "ON" or "OFF"
+        if callback then callback(state)
+        if Custlown.Flags[text] then Custlown.Flags[text] = state end
     end)
+    
+    Custlown.Flags[text] = state
+    return function() return state end
 end
 
-for _, TopbarButton in ipairs(Topbar:GetChildren()) do
-    if TopbarButton.ClassName == "ImageButton" and TopbarButton.Name ~= 'Icon' then
-        TopbarButton.MouseEnter:Connect(function() TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play() end)
-        TopbarButton.MouseLeave:Connect(function() TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play() end)
+function Custlown:CreateSlider(parent, text, minVal, maxVal, defaultValue, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 80)
+    frame.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    frame.BackgroundTransparency = 0.5
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 0, 25)
+    label.Position = UDim2.new(0, 15, 0, 5)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Custlown.CurrentTheme.TextColor
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0.3, 0, 0, 25)
+    valueLabel.Position = UDim2.new(0.7, 0, 0, 5)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = tostring(defaultValue)
+    valueLabel.TextColor3 = Custlown.CurrentTheme.Accent
+    valueLabel.TextSize = 13
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = frame
+    
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(0.9, 0, 0, 4)
+    sliderBg.Position = UDim2.new(0, 15, 0, 60)
+    sliderBg.BackgroundColor3 = Custlown.CurrentTheme.SliderBg
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = frame
+    
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new((defaultValue - minVal) / (maxVal - minVal), 0, 1, 0)
+    sliderFill.BackgroundColor3 = Custlown.CurrentTheme.SliderFill
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBg
+    
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.Position = UDim2.new((defaultValue - minVal) / (maxVal - minVal), -8, 0.5, -8)
+    knob.BackgroundColor3 = Custlown.CurrentTheme.SliderFill
+    knob.BorderSizePixel = 0
+    knob.Parent = sliderBg
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(0, 8)
+    knobCorner.Parent = knob
+    
+    local value = defaultValue
+    local dragging = false
+    
+    local function updateSlider(newVal)
+        value = math.clamp(newVal, minVal, maxVal)
+        local percent = (value - minVal) / (maxVal - minVal)
+        sliderFill.Size = UDim2.new(percent, 0, 1, 0)
+        knob.Position = UDim2.new(percent, -8, 0.5, -8)
+        valueLabel.Text = string.format("%.0f", value)
+        if callback then callback(value)
     end
+    
+    sliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            local x = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            updateSlider(minVal + x * (maxVal - minVal))
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local x = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            updateSlider(minVal + x * (maxVal - minVal))
+        end
+    end)
+    
+    updateSlider(defaultValue)
+    return function() return value end
 end
 
-function CustlownLibrary:LoadConfiguration()
-    local config = useStudio and [[{"General":{"custlownOpen":{"Value":"K","CurrentKeybind":"K"}}}}]] or nil
-    if CEnabled then
-        local notified, loaded, success
-        if useStudio and config then
-            loaded = pcall(function() LoadConfiguration(config) end)
-        elseif isfile then 
-            if callSafely(isfile, ConfigurationFolder .. "/" .. CFileName .. ConfigurationExtension) then
-                loaded = pcall(function() LoadConfiguration(callSafely(readfile, ConfigurationFolder .. "/" .. CFileName .. ConfigurationExtension)) end)
-            end
+function Custlown:CreateLabel(parent, text)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 34)
+    frame.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    frame.BackgroundTransparency = 0.5
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 1, 0)
+    label.Position = UDim2.new(0, 15, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Custlown.CurrentTheme.TextColor
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    return label
+end
+
+function Custlown:CreateInput(parent, text, placeholder, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 65)
+    frame.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    frame.BackgroundTransparency = 0.5
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 0, 20)
+    label.Position = UDim2.new(0, 15, 0, 5)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Custlown.CurrentTheme.TextColor
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local input = Instance.new("TextBox")
+    input.Size = UDim2.new(0.9, 0, 0, 30)
+    input.Position = UDim2.new(0, 15, 0, 28)
+    input.BackgroundColor3 = Custlown.CurrentTheme.InputBg
+    input.PlaceholderText = placeholder
+    input.Text = ""
+    input.TextColor3 = Custlown.CurrentTheme.TextColor
+    input.PlaceholderColor3 = Custlown.CurrentTheme.PlaceholderColor
+    input.TextSize = 13
+    input.Font = Enum.Font.Gotham
+    input.Parent = frame
+    
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0, 6)
+    inputCorner.Parent = input
+    
+    input.FocusLost:Connect(function()
+        if callback then callback(input.Text) end
+    end)
+    
+    return input
+end
+
+function Custlown:CreateDropdown(parent, text, options, defaultOption, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 48)
+    frame.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    frame.BackgroundTransparency = 0.5
+    frame.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.Position = UDim2.new(0, 15, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Custlown.CurrentTheme.TextColor
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local dropdownBtn = Instance.new("TextButton")
+    dropdownBtn.Size = UDim2.new(0.45, 0, 0, 32)
+    dropdownBtn.Position = UDim2.new(0.5, 0, 0.5, -16)
+    dropdownBtn.BackgroundColor3 = Custlown.CurrentTheme.InputBg
+    dropdownBtn.Text = defaultOption
+    dropdownBtn.TextColor3 = Custlown.CurrentTheme.TextColor
+    dropdownBtn.TextSize = 12
+    dropdownBtn.Font = Enum.Font.Gotham
+    dropdownBtn.Parent = frame
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = dropdownBtn
+    
+    local listVisible = false
+    local listFrame = Instance.new("Frame")
+    listFrame.Size = UDim2.new(0.45, 0, 0, 0)
+    listFrame.Position = UDim2.new(0.5, 0, 0.5, 16)
+    listFrame.BackgroundColor3 = Custlown.CurrentTheme.DropdownUnselected
+    listFrame.BackgroundTransparency = 0.9
+    listFrame.ClipsDescendants = true
+    listFrame.Visible = false
+    listFrame.Parent = frame
+    local listCorner = Instance.new("UICorner")
+    listCorner.CornerRadius = UDim.new(0, 6)
+    listCorner.Parent = listFrame
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 2)
+    listLayout.Parent = listFrame
+    
+    local selectedOption = defaultOption
+    
+    for _, opt in ipairs(options) do
+        local optBtn = Instance.new("TextButton")
+        optBtn.Size = UDim2.new(1, 0, 0, 30)
+        optBtn.BackgroundColor3 = Custlown.CurrentTheme.DropdownUnselected
+        optBtn.Text = opt
+        optBtn.TextColor3 = Custlown.CurrentTheme.TextColor
+        optBtn.TextSize = 12
+        optBtn.Font = Enum.Font.Gotham
+        optBtn.Parent = listFrame
+        
+        optBtn.MouseButton1Click:Connect(function()
+            selectedOption = opt
+            dropdownBtn.Text = opt
+            if callback then callback(opt)
+            TweenService:Create(listFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.45, 0, 0, 0)}):Play()
+            task.wait(0.2)
+            listFrame.Visible = false
+            listVisible = false
+        end)
+    end
+    
+    dropdownBtn.MouseButton1Click:Connect(function()
+        if listVisible then
+            TweenService:Create(listFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.45, 0, 0, 0)}):Play()
+            task.wait(0.2)
+            listFrame.Visible = false
         else
-            notified = true
-            CustlownLibrary:Notify({Title = "Config Error", Content = "Filesystem not supported", Duration = 5})
+            listFrame.Visible = true
+            local height = #options * 32
+            TweenService:Create(listFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.45, 0, 0, height)}):Play()
         end
-        if loaded and not notified then CustlownLibrary:Notify({Title = "Config Loaded", Content = "Loaded from previous session", Duration = 3}) end
-    end
-    globalLoaded = true
-end
-
-if Main:FindFirstChild('Notice') then
-    Main.Notice.BackgroundTransparency = 1
-    Main.Notice.Title.TextTransparency = 1
-    Main.Notice.Size = UDim2.new(0,0,0,0)
-    Main.Notice.Position = UDim2.new(0.5,0,0,-100)
-    Main.Notice.Visible = true
-    TweenService:Create(Main.Notice, TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0,280,0,35), Position = UDim2.new(0.5,0,0,-50), BackgroundTransparency = 0.5}):Play()
-    TweenService:Create(Main.Notice.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.1}):Play()
-    task.delay(4, function()
-        CustlownLibrary.LoadConfiguration()
-        if Main.Notice and Main.Notice.Visible then
-            TweenService:Create(Main.Notice, TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0,100,0,25), Position = UDim2.new(0.5,0,0,-100), BackgroundTransparency = 1}):Play()
-            TweenService:Create(Main.Notice.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-            task.wait(0.5)
-            Main.Notice.Visible = false
-        end
+        listVisible = not listVisible
     end)
+    
+    return function() return selectedOption end
 end
 
-return CustlownLibrary
+local NotifContainer = Instance.new("Frame")
+NotifContainer.Name = "NotifContainer"
+NotifContainer.Size = UDim2.new(0, 400, 0, 0)
+NotifContainer.Position = UDim2.new(0.5, -200, 0, 12)
+NotifContainer.BackgroundTransparency = 1
+NotifContainer.Parent = ScreenGui
+
+local NotifLayout = Instance.new("UIListLayout")
+NotifLayout.Padding = UDim.new(0, 8)
+NotifLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+NotifLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+NotifLayout.Parent = NotifContainer
+
+function Custlown:Notify(title, content, duration)
+    local notif = Instance.new("Frame")
+    notif.Size = UDim2.new(0, 380, 0, 0)
+    notif.BackgroundColor3 = Custlown.CurrentTheme.Background
+    notif.BackgroundTransparency = 0.15
+    notif.BorderSizePixel = 1
+    notif.BorderColor3 = Custlown.CurrentTheme.Accent
+    notif.ClipsDescendants = true
+    notif.Parent = NotifContainer
+    
+    local notifCorner = Instance.new("UICorner")
+    notifCorner.CornerRadius = UDim.new(0, 12)
+    notifCorner.Parent = notif
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -20, 0, 22)
+    titleLabel.Position = UDim2.new(0, 15, 0, 8)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = title
+    titleLabel.TextColor3 = Custlown.CurrentTheme.Accent
+    titleLabel.TextSize = 14
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = notif
+    
+    local contentLabel = Instance.new("TextLabel")
+    contentLabel.Size = UDim2.new(1, -20, 0, 0)
+    contentLabel.Position = UDim2.new(0, 15, 0, 32)
+    contentLabel.BackgroundTransparency = 1
+    contentLabel.Text = content
+    contentLabel.TextColor3 = Custlown.CurrentTheme.TextColor
+    contentLabel.TextSize = 12
+    contentLabel.Font = Enum.Font.Gotham
+    contentLabel.TextXAlignment = Enum.TextXAlignment.Left
+    contentLabel.TextWrapped = true
+    contentLabel.Parent = notif
+    
+    task.wait()
+    local textHeight = contentLabel.TextBounds.Y
+    local totalHeight = math.max(55, textHeight + 45)
+    
+    TweenService:Create(notif, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, totalHeight)}):Play()
+    TweenService:Create(contentLabel, TweenInfo.new(0.2), {Size = UDim2.new(1, -20, 0, textHeight + 5)}):Play()
+    
+    task.wait(duration or 3)
+    
+    TweenService:Create(notif, TweenInfo.new(0.3), {Size = UDim2.new(0, 380, 0, 0)}):Play()
+    task.wait(0.3)
+    notif:Destroy()
+end
+
+local dragging = false
+local dragStart, frameStart
+local minimized = false
+local visible = true
+
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        frameStart = MainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset + delta.X, frameStart.Y.Scale, frameStart.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+end)
+
+MinimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        TweenService:Create(MainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 700, 0, 45)}):Play()
+        TabBar.Visible = false
+        ContentFrame.Visible = false
+    else
+        TweenService:Create(MainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 700, 0, 550)}):Play()
+        TabBar.Visible = true
+        ContentFrame.Visible = true
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    visible = not visible
+    MainFrame.Visible = visible
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+        visible = not visible
+        MainFrame.Visible = visible
+    end
+end)
+
+function Custlown:CreateWindow(config)
+    MainFrame.Size = UDim2.new(0, config.Width or 700, 0, config.Height or 550)
+    MainFrame.Position = UDim2.new(0.5, -(config.Width or 700)/2, 0.5, -(config.Height or 550)/2)
+    Title.Text = config.Name or "Custlown"
+    MainFrame.Visible = true
+    
+    TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Size = UDim2.new(0, config.Width or 700, 0, config.Height or 550)}):Play()
+    
+    return {
+        CreateTab = Custlown.CreateTab,
+        CreateSection = Custlown.CreateSection,
+        CreateButton = Custlown.CreateButton,
+        CreateToggle = Custlown.CreateToggle,
+        CreateSlider = Custlown.CreateSlider,
+        CreateLabel = Custlown.CreateLabel,
+        CreateInput = Custlown.CreateInput,
+        CreateDropdown = Custlown.CreateDropdown,
+        Notify = Custlown.Notify
+    }
+end
+
+function Custlown:SetTheme(themeName)
+    if type(themeName) == "string" and Custlown.Themes[themeName] then
+        Custlown.CurrentTheme = Custlown.Themes[themeName]
+    elseif type(themeName) == "table" then
+        Custlown.CurrentTheme = themeName
+    else return false end
+    
+    MainFrame.BackgroundColor3 = Custlown.CurrentTheme.Background
+    MainFrame.BorderColor3 = Custlown.CurrentTheme.Accent
+    TopBar.BackgroundColor3 = Custlown.CurrentTheme.Topbar
+    Title.TextColor3 = Custlown.CurrentTheme.TextColor
+    MinimizeBtn.TextColor3 = Custlown.CurrentTheme.TextColor
+    CloseBtn.TextColor3 = Custlown.CurrentTheme.TextColor
+    TabBar.BackgroundColor3 = Custlown.CurrentTheme.Background
+    TabBar.BorderColor3 = Custlown.CurrentTheme.Stroke
+    ContentFrame.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+    ContentFrame.BorderColor3 = Custlown.CurrentTheme.Stroke
+    ScrollFrame.ScrollBarImageColor3 = Custlown.CurrentTheme.Accent
+    TabContainer.ScrollBarImageColor3 = Custlown.CurrentTheme.Accent
+    
+    for _, tab in pairs(Tabs) do
+        tab.Button.BackgroundColor3 = Custlown.CurrentTheme.ElementBg
+        tab.Button.TextColor3 = Custlown.CurrentTheme.TextColor
+    end
+    
+    return true
+end
+
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.BackgroundTransparency = 1
+TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
+    Size = UDim2.new(0, 700, 0, 550),
+    BackgroundTransparency = 0
+}):Play()
+
+return Custlown
